@@ -1,0 +1,6 @@
+{
+  "name": "ListIt",
+  "description": "ListIt: Real-time collaborative task and grocery shopping list manager with shared access, role permissions, custom factors, Google Calendar integration, voice-to-text dictation, and full theme customization.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
