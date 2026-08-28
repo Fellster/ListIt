@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ListItemModel, ListModel, GROCERY_CATEGORIES, PriorityLevel, SharedMember, CustomFactor } from '../types';
+import { ListItemModel, ListModel, GROCERY_STORES, PriorityLevel, SharedMember, CustomFactor } from '../types';
 import { updateListItem, deleteListItem } from '../services/listService';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
@@ -29,7 +29,8 @@ import {
   Check,
   RotateCcw,
   Volume2,
-  Wand2
+  Wand2,
+  Store
 } from 'lucide-react';
 
 interface ItemDetailsModalProps {
@@ -56,7 +57,8 @@ export const ItemDetailsModal: React.FC<ItemDetailsModalProps> = ({
   const [title, setTitle] = useState(item.title);
   const [quantity, setQuantity] = useState(item.quantity || 1);
   const [unit, setUnit] = useState(item.unit || 'pcs');
-  const [category, setCategory] = useState(item.category || 'Other');
+  const [store, setStore] = useState(item.store || item.category || (list.type === 'grocery' ? item.location : '') || "Trader Joe's");
+  const [category, setCategory] = useState(item.category || item.store || 'Trader Joe\'s');
   const [priority, setPriority] = useState<PriorityLevel>(item.priority || 'medium');
   const [dueDate, setDueDate] = useState(item.dueDate || '');
   const [location, setLocation] = useState(item.location || '');
@@ -74,7 +76,7 @@ export const ItemDetailsModal: React.FC<ItemDetailsModalProps> = ({
 
   // Voice Recording & Dictation States
   const [showVoicePanel, setShowVoicePanel] = useState(false);
-  const [voiceTarget, setVoiceTarget] = useState<'smart' | 'title' | 'notes' | 'location'>('smart');
+  const [voiceTarget, setVoiceTarget] = useState<'smart' | 'title' | 'notes' | 'location' | 'store'>('smart');
   const [lastAppliedVoice, setLastAppliedVoice] = useState(false);
   const [parsedVoiceData, setParsedVoiceData] = useState<ParsedVoiceItem | null>(null);
 
@@ -94,6 +96,9 @@ export const ItemDetailsModal: React.FC<ItemDetailsModalProps> = ({
       setParsedVoiceData(parsed);
     } else if (voiceTarget === 'title') {
       setTitle(finalText);
+    } else if (voiceTarget === 'store') {
+      setStore(finalText);
+      setCategory(finalText);
     } else if (voiceTarget === 'location') {
       setLocation(finalText);
     } else if (voiceTarget === 'notes') {
@@ -119,7 +124,7 @@ export const ItemDetailsModal: React.FC<ItemDetailsModalProps> = ({
     setParsedVoiceData(null);
   };
 
-  const handleStartVoice = (target: 'smart' | 'title' | 'notes' | 'location') => {
+  const handleStartVoice = (target: 'smart' | 'title' | 'notes' | 'location' | 'store') => {
     if (!canEdit) return;
     setVoiceTarget(target);
     setShowVoicePanel(true);
@@ -132,7 +137,10 @@ export const ItemDetailsModal: React.FC<ItemDetailsModalProps> = ({
   const handleApplySmartVoice = () => {
     if (!parsedVoiceData) return;
     if (parsedVoiceData.title) setTitle(parsedVoiceData.title);
-    if (parsedVoiceData.category) setCategory(parsedVoiceData.category);
+    if (parsedVoiceData.category) {
+      setCategory(parsedVoiceData.category);
+      setStore(parsedVoiceData.category);
+    }
     if (parsedVoiceData.quantity) setQuantity(parsedVoiceData.quantity);
     if (parsedVoiceData.unit) setUnit(parsedVoiceData.unit);
     if (parsedVoiceData.location) setLocation(parsedVoiceData.location);
@@ -168,14 +176,16 @@ export const ItemDetailsModal: React.FC<ItemDetailsModalProps> = ({
     setLoading(true);
 
     try {
+      const finalStore = store.trim() || category.trim() || "Trader Joe's";
       await updateListItem(list.id, item.id, {
         title: title.trim(),
         quantity: Number(quantity) || 1,
         unit: unit.trim() || 'pcs',
-        category,
+        category: finalStore,
+        store: finalStore,
         priority,
         dueDate: dueDate || undefined,
-        location: location.trim() || undefined,
+        location: location.trim() || (list.type === 'grocery' ? finalStore : undefined),
         timeScheduled: timeScheduled.trim() || undefined,
         durationMinutes: durationMinutes ? parseInt(durationMinutes, 10) : undefined,
         estimatedPrice: estimatedPrice ? parseFloat(estimatedPrice) : undefined,
@@ -371,6 +381,17 @@ export const ItemDetailsModal: React.FC<ItemDetailsModalProps> = ({
                   }`}
                 >
                   Title Only
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setVoiceTarget('store')}
+                  className={`px-2.5 py-1 rounded-lg font-medium transition ${
+                    voiceTarget === 'store'
+                      ? 'bg-rose-500 text-white shadow-xs'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  Store / Location
                 </button>
                 <button
                   type="button"
@@ -714,8 +735,8 @@ export const ItemDetailsModal: React.FC<ItemDetailsModalProps> = ({
             </div>
           </div>
 
-          {/* Quantity & Unit & Category */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+          {/* Quantity & Unit */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
             <div>
               <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5 flex items-center gap-1">
                 <Hash className="w-3.5 h-3.5 text-slate-400" />
@@ -728,7 +749,7 @@ export const ItemDetailsModal: React.FC<ItemDetailsModalProps> = ({
                 disabled={!canEdit}
                 value={quantity}
                 onChange={(e) => setQuantity(parseFloat(e.target.value) || 1)}
-                className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm text-slate-900 dark:text-white"
+                className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
               />
             </div>
 
@@ -741,29 +762,100 @@ export const ItemDetailsModal: React.FC<ItemDetailsModalProps> = ({
                 disabled={!canEdit}
                 value={unit}
                 onChange={(e) => setUnit(e.target.value)}
-                placeholder="pcs, lbs, bags"
-                className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm text-slate-900 dark:text-white"
+                placeholder="pcs, lbs, bags, pack, oz"
+                className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
               />
             </div>
+          </div>
 
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5 flex items-center gap-1">
-                <Tag className="w-3.5 h-3.5 text-slate-400" />
-                <span>Department / Category</span>
+          {/* Store / Location Tagging Text Input Field */}
+          <div className="p-3.5 bg-emerald-50/50 dark:bg-emerald-950/20 rounded-2xl border border-emerald-100 dark:border-emerald-900/40 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold uppercase tracking-wider text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5">
+                <Store className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                <span>Store / Specific Location Tag</span>
               </label>
-              <select
-                disabled={!canEdit}
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white font-medium"
-              >
-                {GROCERY_CATEGORIES.map((cat) => (
-                  <option key={cat} value={cat}>
-                    {cat}
-                  </option>
-                ))}
-              </select>
+              <div className="flex items-center gap-2">
+                {canEdit && (
+                  <button
+                    type="button"
+                    onClick={() => handleStartVoice('store')}
+                    className={`text-[10px] font-bold px-2 py-0.5 rounded-md flex items-center gap-1 transition ${
+                      isListening && voiceTarget === 'store'
+                        ? 'bg-rose-500 text-white animate-pulse'
+                        : 'text-slate-600 dark:text-slate-300 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-white/60 dark:hover:bg-slate-800'
+                    }`}
+                    title="Dictate Store / Location"
+                  >
+                    <Mic className="w-3 h-3" />
+                    <span>{isListening && voiceTarget === 'store' ? 'Recording Store...' : 'Dictate'}</span>
+                  </button>
+                )}
+                {(store || location) && (
+                  <a
+                    href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(store || location)}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 hover:underline flex items-center gap-1"
+                  >
+                    <span>Directions</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                )}
+              </div>
             </div>
+
+            {/* Free-form Text Input Field with Datalist Options */}
+            <div className="relative">
+              <input
+                type="text"
+                list="grocery-store-suggestions"
+                disabled={!canEdit}
+                value={store}
+                onChange={(e) => {
+                  setStore(e.target.value);
+                  setCategory(e.target.value);
+                }}
+                placeholder="e.g. Trader Joe's, Costco, Whole Foods, Target Downtown, Aisle 4..."
+                className="w-full px-3.5 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm text-slate-900 dark:text-white font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-2xs"
+              />
+              <datalist id="grocery-store-suggestions">
+                {GROCERY_STORES.map((storeOption) => (
+                  <option key={storeOption} value={storeOption} />
+                ))}
+              </datalist>
+            </div>
+
+            {/* Quick 1-Click Store Preset Chips */}
+            {canEdit && (
+              <div className="space-y-1">
+                <div className="text-[10px] uppercase font-bold text-slate-400 dark:text-slate-500 tracking-wider">
+                  Quick Store Suggestions
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {GROCERY_STORES.map((preset) => {
+                    const isSelected = store.trim().toLowerCase() === preset.toLowerCase();
+                    return (
+                      <button
+                        key={preset}
+                        type="button"
+                        onClick={() => {
+                          setStore(preset);
+                          setCategory(preset);
+                        }}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition border ${
+                          isSelected
+                            ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs'
+                            : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-emerald-50 dark:hover:bg-slate-700 hover:border-emerald-200'
+                        }`}
+                      >
+                        {preset}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Assigned collaborator */}

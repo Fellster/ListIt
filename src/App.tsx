@@ -255,7 +255,7 @@ function MainAppContent() {
                 All Lists
               </h1>
               <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400">
-                Organize grocery runs, department aisles, and shared checklists
+                Organize grocery runs, stores, and shared checklists directly
               </p>
             </div>
           </div>
@@ -379,11 +379,13 @@ function MainAppContent() {
               </div>
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+            <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-5">
               {filteredLists.map((list) => (
                 <ListCard
                   key={list.id}
                   list={list}
+                  allLists={lists}
+                  onSelectItem={(item, l) => setInspectingItem({ item, list: l })}
                   onSelect={(l) => {
                     setSelectedList(l);
                     const url = new URL(window.location.href);

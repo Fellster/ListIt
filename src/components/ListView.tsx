@@ -4,8 +4,8 @@ import {
   ListModel, 
   ListItemModel, 
   PermissionRole, 
-  GROCERY_CATEGORIES, 
-  GroceryCategory,
+  GROCERY_STORES, 
+  GroceryStore,
   SharedMember
 } from '../types';
 import { 
@@ -13,6 +13,8 @@ import {
   addListItem, 
   toggleListItem, 
   deleteListItem, 
+  reorderListItem,
+  reorderAllListItems,
   clearCompletedItems,
   getUserPermission,
   updateList,
@@ -55,7 +57,11 @@ import {
   DollarSign,
   CalendarPlus,
   Mic,
-  MicOff
+  MicOff,
+  Store,
+  ArrowUp,
+  ArrowDown,
+  GripVertical
 } from 'lucide-react';
 
 interface ListViewProps {
@@ -74,7 +80,7 @@ export const ListView: React.FC<ListViewProps> = ({ list, onBack, onOpenShare })
   // Quick Add State
   const [inputTitle, setInputTitle] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>(
-    list.type === 'grocery' ? 'Produce' : 'Other'
+    list.type === 'grocery' ? "Trader Joe's" : 'Other Store'
   );
   const [selectedPriority, setSelectedPriority] = useState<'low' | 'medium' | 'high'>('medium');
   const [adding, setAdding] = useState(false);
@@ -90,6 +96,12 @@ export const ListView: React.FC<ListViewProps> = ({ list, onBack, onOpenShare })
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [isActivityOpen, setIsActivityOpen] = useState(false);
   const [copiedNotification, setCopiedNotification] = useState(false);
+
+  // Drag-and-Drop Reordering State
+  const [draggedItemId, setDraggedItemId] = useState<string | null>(null);
+  const [dragOverItemId, setDragOverItemId] = useState<string | null>(null);
+  const [dragOverPosition, setDragOverPosition] = useState<'above' | 'below' | null>(null);
+  const [dragOverGroup, setDragOverGroup] = useState<string | null>(null);
 
   const currentUser = {
     uid: user?.uid || '',
@@ -135,12 +147,14 @@ export const ListView: React.FC<ListViewProps> = ({ list, onBack, onOpenShare })
     try {
       const natural = parseNaturalTaskInput(inputTitle);
       const groceryParsed = parseItemInput(natural.cleanTitle, selectedCategory);
+      const chosenStore = list.type === 'grocery' ? (groceryParsed.store || groceryParsed.category || selectedCategory) : selectedCategory;
 
       await addListItem(
         list.id,
         {
           title: list.type === 'grocery' ? groceryParsed.title : natural.cleanTitle,
-          category: list.type === 'grocery' ? groceryParsed.category : selectedCategory,
+          category: chosenStore,
+          store: chosenStore,
           quantity: natural.quantity || groceryParsed.quantity,
           unit: natural.unit || groceryParsed.unit,
           priority: natural.priority || selectedPriority,
@@ -160,6 +174,151 @@ export const ListView: React.FC<ListViewProps> = ({ list, onBack, onOpenShare })
       console.error('Error adding item:', err);
     } finally {
       setAdding(false);
+    }
+  };
+
+  const handleMoveItem = async (e: React.MouseEvent, item: ListItemModel, direction: 'up' | 'down') => {
+    e.stopPropagation();
+    if (!canEdit) return;
+    try {
+      await reorderListItem(list.id, item.id, direction);
+    } catch (err) {
+      console.error('Error moving item:', err);
+    }
+  };
+
+  // Drag and Drop Event Handlers
+  const handleDragStart = (e: React.DragEvent, item: ListItemModel) => {
+    if (!canEdit) return;
+    setDraggedItemId(item.id);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', item.id);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedItemId(null);
+    setDragOverItemId(null);
+    setDragOverPosition(null);
+    setDragOverGroup(null);
+  };
+
+  const handleDragOverItem = (e: React.DragEvent, targetItem: ListItemModel, groupName?: string) => {
+    if (!canEdit || !draggedItemId || draggedItemId === targetItem.id) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'move';
+
+    const targetElement = e.currentTarget as HTMLElement;
+    const rect = targetElement.getBoundingClientRect();
+    const relativeY = e.clientY - rect.top;
+    const isBelow = relativeY > rect.height / 2;
+    const position = isBelow ? 'below' : 'above';
+
+    if (dragOverItemId !== targetItem.id || dragOverPosition !== position) {
+      setDragOverItemId(targetItem.id);
+      setDragOverPosition(position);
+      if (groupName) setDragOverGroup(groupName);
+    }
+  };
+
+  const handleDragLeaveItem = (e: React.DragEvent, targetItem: ListItemModel) => {
+    const relatedTarget = e.relatedTarget as HTMLElement;
+    if (relatedTarget && e.currentTarget.contains(relatedTarget)) {
+      return;
+    }
+    if (dragOverItemId === targetItem.id) {
+      setDragOverItemId(null);
+      setDragOverPosition(null);
+    }
+  };
+
+  const handleDropOnItem = async (e: React.DragEvent, targetItem: ListItemModel, targetGroup?: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!canEdit || !draggedItemId || draggedItemId === targetItem.id) {
+      handleDragEnd();
+      return;
+    }
+
+    const currentItems = [...items];
+    const draggedIdx = currentItems.findIndex((it) => it.id === draggedItemId);
+    const targetIdx = currentItems.findIndex((it) => it.id === targetItem.id);
+
+    if (draggedIdx === -1 || targetIdx === -1) {
+      handleDragEnd();
+      return;
+    }
+
+    const [draggedItem] = currentItems.splice(draggedIdx, 1);
+    
+    // If dropping into a specific store group, update its store & category
+    if (targetGroup && targetGroup !== 'All Items' && list.type === 'grocery') {
+      draggedItem.store = targetGroup;
+      draggedItem.category = targetGroup;
+    }
+
+    const newTargetIdx = currentItems.findIndex((it) => it.id === targetItem.id);
+    const insertIdx = dragOverPosition === 'below' ? newTargetIdx + 1 : newTargetIdx;
+
+    currentItems.splice(insertIdx, 0, draggedItem);
+
+    // Update state immediately
+    setItems(currentItems);
+    handleDragEnd();
+
+    // Persist reorder sequence
+    try {
+      await reorderAllListItems(list.id, currentItems);
+    } catch (err) {
+      console.error('Error saving reordered items:', err);
+    }
+  };
+
+  const handleDragOverGroupHeader = (e: React.DragEvent, groupName: string) => {
+    if (!canEdit || !draggedItemId) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'move';
+    if (dragOverGroup !== groupName) {
+      setDragOverGroup(groupName);
+    }
+  };
+
+  const handleDropOnGroupHeader = async (e: React.DragEvent, targetGroup: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!canEdit || !draggedItemId) {
+      handleDragEnd();
+      return;
+    }
+
+    const currentItems = [...items];
+    const draggedIdx = currentItems.findIndex((it) => it.id === draggedItemId);
+    if (draggedIdx === -1) {
+      handleDragEnd();
+      return;
+    }
+
+    const [draggedItem] = currentItems.splice(draggedIdx, 1);
+    if (targetGroup && targetGroup !== 'All Items' && list.type === 'grocery') {
+      draggedItem.store = targetGroup;
+      draggedItem.category = targetGroup;
+    }
+
+    const firstGroupIdx = currentItems.findIndex((it) => (it.store || it.category) === targetGroup);
+    if (firstGroupIdx !== -1) {
+      currentItems.splice(firstGroupIdx, 0, draggedItem);
+    } else {
+      currentItems.unshift(draggedItem);
+    }
+
+    setItems(currentItems);
+    handleDragEnd();
+
+    try {
+      await reorderAllListItems(list.id, currentItems);
+    } catch (err) {
+      console.error('Error saving reordered items to group:', err);
     }
   };
 
@@ -254,18 +413,17 @@ export const ListView: React.FC<ListViewProps> = ({ list, onBack, onOpenShare })
 
   const totalItems = items.length;
   const completedItems = items.filter((i) => i.completed).length;
-  const progressPercent = totalItems > 0 ? Math.round((completedItems / totalItems) * 100) : 0;
   const sharedMembers = Object.values(list.sharedWith || {}) as SharedMember[];
 
-  // Group items by category if enabled
+  // Group items by store if enabled
   const groupedCategories: Record<string, ListItemModel[]> = React.useMemo(() => {
     if (!groupByCategory) return { 'All Items': filteredItems };
 
     const map: Record<string, ListItemModel[]> = {};
     filteredItems.forEach((item) => {
-      const cat = item.category || 'Other';
-      if (!map[cat]) map[cat] = [];
-      map[cat].push(item);
+      const storeName = item.store || item.category || 'Other Store';
+      if (!map[storeName]) map[storeName] = [];
+      map[storeName].push(item);
     });
     return map;
   }, [filteredItems, groupByCategory]);
@@ -359,32 +517,23 @@ export const ListView: React.FC<ListViewProps> = ({ list, onBack, onOpenShare })
           </div>
         )}
 
-        {/* Progress Bar & Quick Stats */}
-        <div className="bg-white border border-slate-200/80 rounded-2xl p-4 shadow-xs space-y-2.5">
-          <div className="flex items-center justify-between text-xs">
-            <div className="flex items-center gap-2">
-              <span className="font-bold text-slate-800 text-sm">
-                {progressPercent === 100 ? 'All Completed! 🎉' : `${completedItems} of ${totalItems} items completed`}
+        {/* Quick Stats (No percentages) */}
+        <div className="bg-white border border-slate-200/80 rounded-2xl p-4 shadow-xs flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-slate-800 text-sm">
+              {completedItems === totalItems && totalItems > 0
+                ? 'All Completed! 🎉'
+                : `${completedItems} of ${totalItems} items completed`}
+            </span>
+            {completedItems === totalItems && totalItems > 0 && (
+              <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 font-bold text-[10px] rounded-full">
+                Finished
               </span>
-              {progressPercent === 100 && (
-                <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 font-bold text-[10px] rounded-full">
-                  Finished
-                </span>
-              )}
-            </div>
-            <span className="font-bold text-slate-700">{progressPercent}%</span>
+            )}
           </div>
-
-          <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden">
-            <div
-              className={`h-full transition-all duration-300 ${
-                progressPercent === 100
-                  ? 'bg-emerald-500'
-                  : 'bg-gradient-to-r from-emerald-500 to-teal-500'
-              }`}
-              style={{ width: `${progressPercent}%` }}
-            />
-          </div>
+          <span className="text-xs font-semibold text-slate-500">
+            {totalItems - completedItems} remaining
+          </span>
         </div>
 
         {/* Quick Add Bar (Enabled for Owners & Editors) */}
@@ -451,22 +600,25 @@ export const ListView: React.FC<ListViewProps> = ({ list, onBack, onOpenShare })
               </button>
             </div>
 
-            {/* Quick Category / Department / Priority chips */}
+            {/* Quick Store / Priority chips */}
             {list.type === 'grocery' ? (
               <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs no-scrollbar">
-                <span className="text-[11px] font-semibold text-slate-400 shrink-0">Department:</span>
-                {GROCERY_CATEGORIES.slice(0, 6).map((cat) => (
+                <span className="text-[11px] font-semibold text-slate-400 shrink-0 flex items-center gap-1">
+                  <Store className="w-3 h-3 text-emerald-500" />
+                  <span>Store:</span>
+                </span>
+                {GROCERY_STORES.slice(0, 7).map((storeName) => (
                   <button
-                    key={cat}
+                    key={storeName}
                     type="button"
-                    onClick={() => setSelectedCategory(cat)}
+                    onClick={() => setSelectedCategory(storeName)}
                     className={`px-2.5 py-1 rounded-lg text-[11px] font-medium whitespace-nowrap transition ${
-                      selectedCategory === cat
+                      selectedCategory === storeName
                         ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 font-semibold'
                         : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
                     }`}
                   >
-                    {cat}
+                    {storeName}
                   </button>
                 ))}
               </div>
@@ -561,15 +713,15 @@ export const ListView: React.FC<ListViewProps> = ({ list, onBack, onOpenShare })
               <button
                 type="button"
                 onClick={() => setGroupByCategory(!groupByCategory)}
-                className={`p-2 rounded-xl border text-xs font-medium transition flex items-center gap-1 ${
+                className={`px-3 py-1.5 rounded-xl border text-xs font-bold transition flex items-center gap-1.5 shadow-2xs ${
                   groupByCategory
-                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                    : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                    ? 'bg-emerald-600 text-white border-emerald-600'
+                    : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
                 }`}
-                title="Toggle Department / Aisle grouping"
+                title="Toggle Store grouping"
               >
-                <Layers className="w-3.5 h-3.5" />
-                <span className="hidden md:inline">Aisles</span>
+                <Store className="w-3.5 h-3.5" />
+                <span>{groupByCategory ? 'Grouped by Store' : 'Group by Store'}</span>
               </button>
             )}
 
@@ -638,148 +790,219 @@ export const ListView: React.FC<ListViewProps> = ({ list, onBack, onOpenShare })
                     </div>
                   )}
 
-                  <div className="bg-white border border-slate-200/80 rounded-2xl divide-y divide-slate-100 overflow-hidden shadow-2xs">
-                    {categoryItems.map((item) => (
-                      <div
-                        key={item.id}
-                        onClick={() => {
-                          setSelectedItem(item);
-                          setIsDetailsOpen(true);
-                        }}
-                        className={`p-3.5 flex items-center justify-between gap-3 hover:bg-slate-50/70 transition cursor-pointer group ${
-                          item.completed ? 'bg-slate-50/40 text-slate-400' : 'text-slate-800'
-                        }`}
-                      >
-                        {/* Left: Checkbox & title */}
-                        <div className="flex items-center gap-3 min-w-0 flex-1">
-                          <button
-                            type="button"
-                            disabled={!canEdit}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleToggle(item);
-                            }}
-                            className={`w-6 h-6 rounded-lg flex items-center justify-center transition shrink-0 ${
-                              item.completed
-                                ? 'bg-emerald-600 text-white shadow-2xs'
-                                : canEdit
-                                ? 'border-2 border-slate-300 hover:border-emerald-500 text-transparent'
-                                : 'border-2 border-slate-200 opacity-60'
-                            }`}
-                          >
-                            <Check className="w-3.5 h-3.5 stroke-[3]" />
-                          </button>
+                  <div 
+                    className={`bg-white border rounded-2xl divide-y divide-slate-100 overflow-hidden shadow-2xs transition-colors ${
+                      dragOverGroup === groupTitle && draggedItemId
+                        ? 'border-emerald-400 ring-2 ring-emerald-400/20'
+                        : 'border-slate-200/80'
+                    }`}
+                    onDragOver={(e) => handleDragOverGroupHeader(e, groupTitle)}
+                    onDrop={(e) => handleDropOnGroupHeader(e, groupTitle)}
+                  >
+                    {categoryItems.map((item) => {
+                      const isDragging = draggedItemId === item.id;
+                      const isDragTarget = dragOverItemId === item.id;
 
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span
-                                className={`text-sm font-medium break-words ${
-                                  item.completed
-                                    ? 'line-through text-slate-400 dark:text-slate-500'
-                                    : 'text-slate-900 dark:text-white font-semibold'
-                                }`}
-                              >
-                                {item.title}
-                              </span>
-
-                              {/* Quantity badge */}
-                              {item.quantity && (
-                                <span className="text-xs font-semibold px-2 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-md shrink-0 border border-slate-200/60 dark:border-slate-700">
-                                  {item.quantity} {item.unit || ''}
-                                </span>
-                              )}
-
-                              {/* Priority badge */}
-                              {item.priority === 'urgent' && !item.completed && (
-                                <span className="text-[10px] font-extrabold px-1.5 py-0.5 bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 rounded shrink-0">
-                                  🚨 Urgent
-                                </span>
-                              )}
-                              {item.priority === 'high' && !item.completed && (
-                                <span className="text-[10px] font-bold px-1.5 py-0.5 bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 border border-rose-200 dark:border-rose-800 rounded shrink-0">
-                                  High
-                                </span>
-                              )}
-
-                              {/* Location */}
-                              {item.location && (
-                                <span className="text-[10px] font-medium text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/30 px-1.5 py-0.5 rounded flex items-center gap-1 shrink-0">
-                                  <MapPin className="w-2.5 h-2.5 text-rose-500" />
-                                  <span>{item.location}</span>
-                                </span>
-                              )}
-
-                              {/* Scheduled Time */}
-                              {item.timeScheduled && (
-                                <span className="text-[10px] font-medium text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/30 px-1.5 py-0.5 rounded flex items-center gap-1 shrink-0">
-                                  <Clock className="w-2.5 h-2.5 text-indigo-500" />
-                                  <span>{item.timeScheduled}</span>
-                                </span>
-                              )}
-
-                              {/* Price */}
-                              {item.estimatedPrice !== undefined && item.estimatedPrice > 0 && (
-                                <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/30 px-1.5 py-0.5 rounded flex items-center gap-0.5 shrink-0">
-                                  <DollarSign className="w-2.5 h-2.5 text-emerald-500" />
-                                  <span>{item.estimatedPrice.toFixed(2)}</span>
-                                </span>
-                              )}
-
-                              {/* Due date badge */}
-                              {item.dueDate && (
-                                <span className="text-[10px] text-slate-500 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded flex items-center gap-1 shrink-0">
-                                  <Calendar className="w-2.5 h-2.5" />
-                                  {item.dueDate}
-                                </span>
-                              )}
+                      return (
+                        <div
+                          key={item.id}
+                          draggable={canEdit}
+                          onDragStart={(e) => handleDragStart(e, item)}
+                          onDragEnd={handleDragEnd}
+                          onDragOver={(e) => handleDragOverItem(e, item, groupTitle)}
+                          onDragLeave={(e) => handleDragLeaveItem(e, item)}
+                          onDrop={(e) => handleDropOnItem(e, item, groupTitle)}
+                          onClick={() => {
+                            setSelectedItem(item);
+                            setIsDetailsOpen(true);
+                          }}
+                          className={`relative p-3.5 flex items-center justify-between gap-2.5 transition cursor-pointer select-none group ${
+                            isDragging
+                              ? 'opacity-40 bg-emerald-50/70 dark:bg-emerald-950/30 border-dashed border-emerald-400'
+                              : isDragTarget
+                              ? 'bg-emerald-50/50 dark:bg-emerald-950/20'
+                              : item.completed
+                              ? 'bg-slate-50/40 text-slate-400 hover:bg-slate-50/80'
+                              : 'text-slate-800 hover:bg-slate-50/70'
+                          }`}
+                        >
+                          {/* Top drop target insertion bar */}
+                          {isDragTarget && dragOverPosition === 'above' && (
+                            <div className="absolute top-0 left-0 right-0 h-1 bg-emerald-500 z-20 flex items-center shadow-xs">
+                              <span className="w-2.5 h-2.5 rounded-full bg-emerald-600 -ml-1 border border-white" />
                             </div>
+                          )}
+                          {/* Bottom drop target insertion bar */}
+                          {isDragTarget && dragOverPosition === 'below' && (
+                            <div className="absolute bottom-0 left-0 right-0 h-1 bg-emerald-500 z-20 flex items-center shadow-xs">
+                              <span className="w-2.5 h-2.5 rounded-full bg-emerald-600 -ml-1 border border-white" />
+                            </div>
+                          )}
 
-                            {/* Custom factors */}
-                            {item.customFactors && item.customFactors.length > 0 && (
-                              <div className="flex flex-wrap gap-1 mt-1">
-                                {item.customFactors.map((f) => (
-                                  <span key={f.id} className="text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 px-1.5 py-0.5 rounded">
-                                    <strong>{f.label}:</strong> {f.value}
-                                  </span>
-                                ))}
-                              </div>
+                          {/* Left: Drag Handle (when canEdit), Checkbox & title */}
+                          <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                            {/* Grip / Drag Handle */}
+                            {canEdit && (
+                              <button
+                                type="button"
+                                onClick={(e) => e.stopPropagation()}
+                                className="p-1 -ml-1 text-slate-300 group-hover:text-slate-500 active:text-emerald-600 cursor-grab active:cursor-grabbing transition rounded hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center shrink-0"
+                                title="Drag to reorder priority"
+                              >
+                                <GripVertical className="w-4 h-4" />
+                              </button>
                             )}
 
-                            {item.notes && (
-                              <p className="text-xs text-slate-400 line-clamp-1 mt-0.5">
-                                {item.notes}
-                              </p>
+                            {/* Checkbox */}
+                            <button
+                              type="button"
+                              disabled={!canEdit}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleToggle(item);
+                              }}
+                              className={`w-6 h-6 rounded-lg flex items-center justify-center transition shrink-0 ${
+                                item.completed
+                                  ? 'bg-emerald-600 text-white shadow-2xs'
+                                  : canEdit
+                                  ? 'border-2 border-slate-300 hover:border-emerald-500 text-transparent'
+                                  : 'border-2 border-slate-200 opacity-60'
+                              }`}
+                            >
+                              <Check className="w-3.5 h-3.5 stroke-[3]" />
+                            </button>
+
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span
+                                  className={`text-sm font-medium break-words ${
+                                    item.completed
+                                      ? 'line-through text-slate-400 dark:text-slate-500'
+                                      : 'text-slate-900 dark:text-white font-semibold'
+                                  }`}
+                                >
+                                  {item.title}
+                                </span>
+
+                                {/* Quantity badge */}
+                                {item.quantity && (
+                                  <span className="text-xs font-semibold px-2 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-md shrink-0 border border-slate-200/60 dark:border-slate-700">
+                                    {item.quantity} {item.unit || ''}
+                                  </span>
+                                )}
+
+                                {/* Store Tag Badge placed right after the item name/quantity */}
+                                {(item.store || (list.type === 'grocery' && item.category)) && (
+                                  <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded-md border border-emerald-200/60 dark:border-emerald-800 shrink-0">
+                                    <Store className="w-3 h-3 text-emerald-600" />
+                                    <span>{item.store || item.category}</span>
+                                  </span>
+                                )}
+
+                                {/* Priority badge */}
+                                {item.priority === 'urgent' && !item.completed && (
+                                  <span className="text-[10px] font-extrabold px-1.5 py-0.5 bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 rounded shrink-0">
+                                    🚨 Urgent
+                                  </span>
+                                )}
+                                {item.priority === 'high' && !item.completed && (
+                                  <span className="text-[10px] font-bold px-1.5 py-0.5 bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 border border-rose-200 dark:border-rose-800 rounded shrink-0">
+                                    High
+                                  </span>
+                                )}
+
+                                {/* Location */}
+                                {item.location && (
+                                  <span className="text-[10px] font-medium text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/30 px-1.5 py-0.5 rounded flex items-center gap-1 shrink-0">
+                                    <MapPin className="w-2.5 h-2.5 text-rose-500" />
+                                    <span>{item.location}</span>
+                                  </span>
+                                )}
+
+                                {/* Scheduled Time */}
+                                {item.timeScheduled && (
+                                  <span className="text-[10px] font-medium text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/30 px-1.5 py-0.5 rounded flex items-center gap-1 shrink-0">
+                                    <Clock className="w-2.5 h-2.5 text-indigo-500" />
+                                    <span>{item.timeScheduled}</span>
+                                  </span>
+                                )}
+
+                                {/* Price */}
+                                {item.estimatedPrice !== undefined && item.estimatedPrice > 0 && (
+                                  <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/30 px-1.5 py-0.5 rounded flex items-center gap-0.5 shrink-0">
+                                    <DollarSign className="w-2.5 h-2.5 text-emerald-500" />
+                                    <span>{item.estimatedPrice.toFixed(2)}</span>
+                                  </span>
+                                )}
+
+                                {/* Due date badge */}
+                                {item.dueDate && (
+                                  <span className="text-[10px] text-slate-500 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded flex items-center gap-1 shrink-0">
+                                    <Calendar className="w-2.5 h-2.5" />
+                                    {item.dueDate}
+                                  </span>
+                                )}
+                              </div>
+
+                              {/* Custom factors */}
+                              {item.customFactors && item.customFactors.length > 0 && (
+                                <div className="flex flex-wrap gap-1 mt-1">
+                                  {item.customFactors.map((f) => (
+                                    <span key={f.id} className="text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 px-1.5 py-0.5 rounded">
+                                      <strong>{f.label}:</strong> {f.value}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+
+                              {item.notes && (
+                                <p className="text-xs text-slate-400 line-clamp-1 mt-0.5">
+                                  {item.notes}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Right: GCal sync badge, Reorder buttons, delete */}
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            {item.googleCalendarEventId && (
+                              <span className="text-[10px] text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40 px-2 py-0.5 rounded-full font-bold">
+                                📅 GCal
+                              </span>
+                            )}
+
+                            {canEdit && (
+                              <div className="flex items-center gap-0.5">
+                                <button
+                                  type="button"
+                                  onClick={(e) => handleMoveItem(e, item, 'up')}
+                                  className="p-1 text-slate-300 hover:text-slate-700 hover:bg-slate-100 rounded transition"
+                                  title="Move item up"
+                                >
+                                  <ArrowUp className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => handleMoveItem(e, item, 'down')}
+                                  className="p-1 text-slate-300 hover:text-slate-700 hover:bg-slate-100 rounded transition"
+                                  title="Move item down"
+                                >
+                                  <ArrowDown className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => handleDeleteItem(e, item)}
+                                  className="p-1.5 text-slate-300 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
+                                  title="Delete item"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
                             )}
                           </div>
                         </div>
-
-                        {/* Right: Category tag, GCal sync button, delete */}
-                        <div className="flex items-center gap-2 shrink-0">
-                          {item.googleCalendarEventId && (
-                            <span className="text-[10px] text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40 px-2 py-0.5 rounded-full font-bold">
-                              📅 GCal
-                            </span>
-                          )}
-
-                          {item.category && !groupByCategory && (
-                            <span className="hidden sm:inline-block text-[11px] text-slate-500 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md border border-slate-200/50 dark:border-slate-700">
-                              {item.category}
-                            </span>
-                          )}
-
-                          {canEdit && (
-                            <button
-                              type="button"
-                              onClick={(e) => handleDeleteItem(e, item)}
-                              className="p-1.5 text-slate-300 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-lg transition opacity-0 group-hover:opacity-100"
-                              title="Delete item"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               );

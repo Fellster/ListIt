@@ -1,7 +1,20 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, browserLocalPersistence, setPersistence } from 'firebase/auth';
-import { getFirestore, enableIndexedDbPersistence } from 'firebase/firestore';
+import { 
+  getFirestore, 
+  initializeFirestore, 
+  persistentLocalCache, 
+  persistentMultipleTabManager,
+  setLogLevel 
+} from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
+
+// Silence transient retry and offline notices in sandboxed iframe environment
+try {
+  setLogLevel('silent');
+} catch {
+  // Ignore
+}
 
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
@@ -21,23 +34,37 @@ try {
   console.warn('Auth persistence init note:', e);
 }
 
-// Pass custom database ID if present in config
+// Pass custom database ID only if present and non-default
 const configAny = firebaseConfig as any;
-export const db = configAny.firestoreDatabaseId && configAny.firestoreDatabaseId !== '(default)'
-  ? getFirestore(app, configAny.firestoreDatabaseId)
-  : getFirestore(app);
+const customDbId = configAny.firestoreDatabaseId && configAny.firestoreDatabaseId !== '(default)'
+  ? configAny.firestoreDatabaseId
+  : undefined;
 
-// Enable offline persistence where supported
+let firestoreInstance;
 try {
-  enableIndexedDbPersistence(db).catch((err) => {
-    if (err.code === 'failed-precondition') {
-      // Multiple tabs open, persistence can only be enabled in one tab at a time.
-    } else if (err.code === 'unimplemented') {
-      // The current browser does not support all of the features required to enable persistence
-    }
-  });
+  const firestoreSettings = {
+    experimentalForceLongPolling: true,
+    localCache: persistentLocalCache({
+      tabManager: persistentMultipleTabManager()
+    })
+  };
+
+  firestoreInstance = customDbId 
+    ? initializeFirestore(app, firestoreSettings, customDbId)
+    : initializeFirestore(app, firestoreSettings);
 } catch {
-  // Ignore
+  try {
+    const fallbackSettings = {
+      experimentalForceLongPolling: true
+    };
+    firestoreInstance = customDbId
+      ? initializeFirestore(app, fallbackSettings, customDbId)
+      : initializeFirestore(app, fallbackSettings);
+  } catch {
+    firestoreInstance = customDbId ? getFirestore(app, customDbId) : getFirestore(app);
+  }
 }
+
+export const db = firestoreInstance;
 
 export default app;

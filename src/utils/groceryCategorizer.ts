@@ -1,56 +1,49 @@
-import { GroceryCategory, GROCERY_CATEGORIES } from '../types';
+import { GroceryStore, GROCERY_STORES } from '../types';
 
-const CATEGORY_KEYWORDS: Record<GroceryCategory, string[]> = {
-  'Produce': [
-    'apple', 'banana', 'orange', 'lemon', 'lime', 'avocado', 'tomato', 'potato', 'onion', 'garlic',
-    'lettuce', 'spinach', 'kale', 'carrot', 'broccoli', 'cucumber', 'pepper', 'berry', 'strawberry',
-    'blueberry', 'grape', 'watermelon', 'melon', 'herb', 'cilantro', 'parsley', 'basil', 'ginger',
-    'mushroom', 'celery', 'zucchini', 'cabbage', 'asparagus', 'corn', 'peach', 'plum', 'pear', 'mango',
-    'fruit', 'vegetable', 'greens', 'salad'
+const STORE_KEYWORDS: Record<GroceryStore, string[]> = {
+  "Trader Joe's": [
+    'trader joe', 'tj', 'cookie butter', 'everything bagel', 'frozen meal', 'snack', 'charcuterie', 
+    'mandarin chicken', 'cauliflower gnocchi', 'sour dough', 'speculoos', 'trail mix'
   ],
-  'Dairy & Refrigerated': [
-    'milk', 'cheese', 'cheddar', 'mozzarella', 'parmesan', 'butter', 'yogurt', 'egg', 'eggs', 'cream',
-    'sour cream', 'cream cheese', 'tofu', 'almond milk', 'oat milk', 'soy milk', 'cottage cheese',
-    'kefir', 'margarine', 'ricotta', 'gouda', 'feta'
+  'Costco': [
+    'costco', 'kirkland', 'bulk', 'toilet paper', 'paper towel', 'rotisserie chicken', 'pack', 'case', 
+    'water case', 'detergent bulk', 'olive oil bulk'
   ],
-  'Meat & Seafood': [
-    'chicken', 'beef', 'steak', 'pork', 'bacon', 'turkey', 'sausage', 'salmon', 'fish', 'tuna',
-    'shrimp', 'crab', 'lobster', 'ham', 'ground beef', 'ribs', 'meatball', 'lamb', 'tilapia', 'cod'
+  'Whole Foods': [
+    'whole foods', 'organic', 'kale', 'artisan', 'kombucha', 'fresh fish', 'grass fed', 'gluten free', 
+    'avocado organic', 'microgreens', 'berries'
   ],
-  'Bakery & Bread': [
-    'bread', 'bagel', 'croissant', 'bun', 'buns', 'tortilla', 'pita', 'muffin', 'cake', 'cookie',
-    'pastry', 'donut', 'sourdough', 'brioche', 'roll', 'rolls', 'baguette', 'crust'
+  'Target': [
+    'target', 'good & gather', 'household', 'soap', 'shampoo', 'cleaning', 'towel', 'storage', 
+    'candles', 'electronics', 'coffee pods', 'snacks'
   ],
-  'Pantry & Grains': [
-    'rice', 'pasta', 'spaghetti', 'noodle', 'flour', 'sugar', 'oil', 'olive oil', 'salt', 'pepper',
-    'spice', 'cereal', 'oats', 'quinoa', 'lentil', 'beans', 'sauce', 'tomato sauce', 'ketchup',
-    'mustard', 'mayo', 'mayonnaise', 'vinegar', 'honey', 'syrup', 'peanut butter', 'jam', 'jelly'
+  'Safeway': [
+    'safeway', 'signature select', 'lucerne', 'deli', 'bakery', 'roast chicken', 'cereal', 'soup'
   ],
-  'Canned & Jarred': [
-    'canned', 'soup', 'broth', 'canned beans', 'canned corn', 'tuna can', 'olives', 'pickles',
-    'salsa', 'marinara', 'coconut milk'
+  'Walmart': [
+    'walmart', 'great value', 'equate', 'batteries', 'supplies', 'pantry', 'canned food'
   ],
-  'Frozen Foods': [
-    'ice cream', 'frozen', 'pizza', 'frozen pizza', 'frozen veggies', 'frozen fruit', 'popsicle',
-    'waffle', 'waffles', 'nuggets', 'frozen fries', 'ice'
+  'Kroger': [
+    'kroger', 'simple truth', 'private selection'
   ],
-  'Snacks & Treats': [
-    'chips', 'popcorn', 'pretzel', 'pretzels', 'cracker', 'crackers', 'chocolate', 'candy', 'gummy',
-    'nuts', 'almonds', 'cashews', 'trail mix', 'bar', 'granola bar', 'cookie'
+  'Aldi': [
+    'aldi', 'clancy', 'friendly farms', 'season choice'
   ],
-  'Beverages': [
-    'water', 'juice', 'soda', 'coke', 'pepsi', 'coffee', 'tea', 'beer', 'wine', 'sparkling water',
-    'energy drink', 'kombucha', 'lemonade', 'smoothie'
+  'Sprouts': [
+    'sprouts', 'bulk nuts', 'vitamins', 'fresh produce', 'farmers market'
   ],
-  'Household & Cleaning': [
-    'paper towel', 'toilet paper', 'trash bag', 'dish soap', 'detergent', 'sponge', 'cleaner',
-    'bleach', 'foil', 'ziploc', 'plastic wrap', 'napkin', 'light bulb', 'battery', 'soap'
+  'CVS / Pharmacy': [
+    'cvs', 'pharmacy', 'medicine', 'tylenol', 'advil', 'bandaid', 'toothpaste', 'vitamins', 'prescription', 
+    'sunscreen', 'first aid', 'drops'
   ],
-  'Personal Care': [
-    'shampoo', 'conditioner', 'body wash', 'toothpaste', 'toothbrush', 'deodorant', 'lotion',
-    'sunscreen', 'razor', 'floss', 'tampon', 'pad', 'vitamins', 'medicine', 'bandaid'
+  'Home Depot / Hardware': [
+    'home depot', 'lowes', 'hardware', 'screws', 'nails', 'light bulb', 'air filter', 'paint', 'tools', 
+    'garden hose', 'soil', 'plants'
   ],
-  'Other': []
+  'Local Market': [
+    'local market', 'farmers market', 'butcher', 'bakery shop', 'fish market', 'deli counter'
+  ],
+  'Other Store': []
 };
 
 const QUANTITY_UNITS = [
@@ -64,12 +57,21 @@ export interface ParsedItemInput {
   quantity: number;
   unit: string;
   category: string;
+  store: string;
 }
 
-export function parseItemInput(rawInput: string, defaultCategory: string = 'Other'): ParsedItemInput {
+export function parseItemInput(rawInput: string, defaultStore: string = "Trader Joe's"): ParsedItemInput {
   let cleaned = rawInput.trim();
   let quantity = 1;
   let unit = 'pcs';
+  let explicitStore: string | undefined;
+
+  // Check if store is mentioned via @Store or at Store
+  const storeAtMatch = cleaned.match(/@([^@\n]+)/);
+  if (storeAtMatch) {
+    explicitStore = storeAtMatch[1].trim();
+    cleaned = cleaned.replace(storeAtMatch[0], '').trim();
+  }
 
   // Pattern: "3 lbs apples" or "2x milk" or "dozen eggs" or "5 cans of beans"
   const regexDozen = /^(?:a\s+)?dozen\s+(.+)$/i;
@@ -79,7 +81,6 @@ export function parseItemInput(rawInput: string, defaultCategory: string = 'Othe
     unit = 'pcs';
     cleaned = matchDozen[1].trim();
   } else {
-    // Pattern like: "3.5 lbs of apples" or "2 boxes cereal" or "4x bananas" or "6 apples"
     const regexQty = /^(\d+(?:\.\d+)?)\s*(?:x\s*|\s+)?([a-zA-Z]+)?(?:\s+of\s+|\s+)(.+)$/i;
     const matchQty = cleaned.match(regexQty);
     if (matchQty) {
@@ -93,14 +94,12 @@ export function parseItemInput(rawInput: string, defaultCategory: string = 'Othe
           unit = possibleUnit;
           cleaned = remainder.trim();
         } else if (possibleUnit) {
-          // It wasn't a recognized unit, so it might be part of the title: e.g. "2 red apples"
           cleaned = `${possibleUnit} ${remainder}`.trim();
         } else {
           cleaned = remainder.trim();
         }
       }
     } else {
-      // Just a leading number without unit like "3 apples"
       const simpleNumberMatch = /^(\d+(?:\.\d+)?)\s+(.+)$/i;
       const matchSimple = cleaned.match(simpleNumberMatch);
       if (matchSimple) {
@@ -113,25 +112,25 @@ export function parseItemInput(rawInput: string, defaultCategory: string = 'Othe
     }
   }
 
-  // Capitalize item title properly
   const formattedTitle = cleaned
     ? cleaned.charAt(0).toUpperCase() + cleaned.slice(1)
     : rawInput;
 
-  // Auto detect category
   const lowerTitle = formattedTitle.toLowerCase();
-  let detectedCategory = defaultCategory;
+  let detectedStore = explicitStore || defaultStore;
 
-  for (const cat of GROCERY_CATEGORIES) {
-    if (cat === 'Other') continue;
-    const keywords = CATEGORY_KEYWORDS[cat] || [];
-    const matched = keywords.some(kw => {
-      const regex = new RegExp(`\\b${kw}`, 'i');
-      return regex.test(lowerTitle);
-    });
-    if (matched) {
-      detectedCategory = cat;
-      break;
+  if (!explicitStore) {
+    for (const store of GROCERY_STORES) {
+      if (store === 'Other Store') continue;
+      const keywords = STORE_KEYWORDS[store] || [];
+      const matched = keywords.some((kw) => {
+        const regex = new RegExp(`\\b${kw}`, 'i');
+        return regex.test(lowerTitle);
+      });
+      if (matched) {
+        detectedStore = store;
+        break;
+      }
     }
   }
 
@@ -139,6 +138,7 @@ export function parseItemInput(rawInput: string, defaultCategory: string = 'Othe
     title: formattedTitle,
     quantity,
     unit,
-    category: detectedCategory
+    category: detectedStore,
+    store: detectedStore
   };
 }

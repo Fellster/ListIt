@@ -2,6 +2,9 @@ import React, { useState, useMemo } from 'react';
 import { ListItemModel, ListModel } from '../types';
 import { 
   toggleListItem, 
+  deleteListItem,
+  reorderListItem,
+  moveItemToList
 } from '../services/listService';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
@@ -17,7 +20,11 @@ import {
   DollarSign, 
   CalendarPlus, 
   RefreshCw,
-  Edit3
+  Edit3,
+  Trash2,
+  ArrowUp,
+  ArrowDown,
+  Store
 } from 'lucide-react';
 
 interface TodayViewProps {
@@ -50,14 +57,7 @@ export const TodayView: React.FC<TodayViewProps> = ({
     syncTaskToCalendar 
   } = useCalendar();
 
-  // Filter State
-  const [activeFilter, setActiveFilter] = useState<'all' | 'pending' | 'completed'>('all');
-  const [timeSectionFilter, setTimeSectionFilter] = useState<'all' | 'morning' | 'afternoon' | 'evening' | 'anytime'>('all');
   const [syncingItemId, setSyncingItemId] = useState<string | null>(null);
-
-  // Today counts
-  const totalCount = allTodayItems.length;
-  const completedCount = allTodayItems.filter((i) => i.completed).length;
 
   // Item completion toggle with confetti
   const handleToggle = async (item: ListItemModel) => {
@@ -98,42 +98,15 @@ export const TodayView: React.FC<TodayViewProps> = ({
     }
   };
 
-  // Helper to categorize tasks into time slots
-  const getTimeSlot = (timeStr?: string): 'morning' | 'afternoon' | 'evening' | 'anytime' => {
-    if (!timeStr) return 'anytime';
-    const lower = timeStr.toLowerCase();
-    if (lower.includes('am')) return 'morning';
-    if (lower.includes('pm')) {
-      const match = lower.match(/(\d{1,2})/);
-      if (match) {
-        const hour = parseInt(match[1], 10);
-        if (hour === 12 || (hour >= 1 && hour < 5)) return 'afternoon';
-        return 'evening';
-      }
-      return 'afternoon';
-    }
-    const match24 = timeStr.match(/^(\d{1,2})/);
-    if (match24) {
-      const hour = parseInt(match24[1], 10);
-      if (hour < 12) return 'morning';
-      if (hour < 17) return 'afternoon';
-      return 'evening';
-    }
-    return 'anytime';
-  };
-
-  // Filtered items
+  // Items for today (pending items first, completed items below)
   const filteredItems = useMemo(() => {
-    return allTodayItems.filter((item) => {
-      if (activeFilter === 'pending' && item.completed) return false;
-      if (activeFilter === 'completed' && !item.completed) return false;
-      if (timeSectionFilter !== 'all') {
-        const slot = getTimeSlot(item.timeScheduled);
-        if (slot !== timeSectionFilter) return false;
+    return [...allTodayItems].sort((a, b) => {
+      if (a.completed !== b.completed) {
+        return a.completed ? 1 : -1;
       }
-      return true;
+      return 0;
     });
-  }, [allTodayItems, activeFilter, timeSectionFilter]);
+  }, [allTodayItems]);
 
   return (
     <div className="max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6 flex-1">
@@ -141,64 +114,6 @@ export const TodayView: React.FC<TodayViewProps> = ({
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 sm:gap-8">
         {/* Left 2 Columns: Task Manager */}
         <div className="lg:col-span-2 space-y-5">
-          {/* Filter & View Tabs */}
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            {/* Status Filter */}
-            <div className="flex items-center gap-1 bg-white dark:bg-slate-900 p-1 rounded-xl border border-slate-200 dark:border-slate-800 shadow-2xs">
-              <button
-                type="button"
-                onClick={() => setActiveFilter('all')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
-                  activeFilter === 'all'
-                    ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-2xs'
-                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-                }`}
-              >
-                All ({allTodayItems.length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveFilter('pending')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
-                  activeFilter === 'pending'
-                    ? 'bg-emerald-600 text-white shadow-2xs'
-                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-                }`}
-              >
-                To Do ({totalCount - completedCount})
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveFilter('completed')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
-                  activeFilter === 'completed'
-                    ? 'bg-slate-700 text-white shadow-2xs'
-                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-                }`}
-              >
-                Done ({completedCount})
-              </button>
-            </div>
-
-            {/* Time Slot Filter */}
-            <div className="flex items-center gap-1 overflow-x-auto pb-1 sm:pb-0 text-xs text-slate-500 dark:text-slate-400 font-semibold">
-              {(['all', 'morning', 'afternoon', 'evening', 'anytime'] as const).map((slot) => (
-                <button
-                  key={slot}
-                  type="button"
-                  onClick={() => setTimeSectionFilter(slot)}
-                  className={`px-2.5 py-1 rounded-lg transition capitalize text-xs ${
-                    timeSectionFilter === slot
-                      ? 'bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-white font-bold'
-                      : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400'
-                  }`}
-                >
-                  {slot}
-                </button>
-              ))}
-            </div>
-          </div>
-
           {/* Task Items List */}
           {filteredItems.length === 0 ? (
             <div className="py-12 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl text-center p-8 space-y-3 shadow-2xs">
@@ -206,9 +121,7 @@ export const TodayView: React.FC<TodayViewProps> = ({
                 ✨
               </div>
               <h3 className="text-sm font-bold text-slate-800 dark:text-white">
-                {activeFilter === 'completed'
-                  ? 'No completed items yet for today'
-                  : 'Your agenda for today is clear!'}
+                Your agenda for today is clear!
               </h3>
               <p className="text-xs text-slate-400 max-w-sm mx-auto">
                 Use the "Add on to List" button in the top navigation to schedule tasks and items for today.
@@ -289,8 +202,15 @@ export const TodayView: React.FC<TodayViewProps> = ({
                           )}
                         </div>
 
-                        {/* Factors Row (Location, Time, Price, Notes) */}
+                        {/* Factors Row (Store, Location, Time, Price, Notes) */}
                         <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                          {(item.store || (parentList?.type === 'grocery' && item.category)) && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 rounded-md font-bold text-[11px] border border-emerald-200/60 dark:border-emerald-800">
+                              <Store className="w-3 h-3 text-emerald-600" />
+                              <span>{item.store || item.category}</span>
+                            </span>
+                          )}
+
                           {item.location && (
                             <a
                               href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
@@ -333,7 +253,55 @@ export const TodayView: React.FC<TodayViewProps> = ({
                     </div>
 
                     {/* Right: Actions */}
-                    <div className="flex items-center gap-1 shrink-0">
+                    <div className="flex items-center gap-0.5 shrink-0">
+                      {/* Move Up Button */}
+                      <button
+                        type="button"
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          await reorderListItem(item.listId, item.id, 'up');
+                        }}
+                        className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                        title="Move Up"
+                      >
+                        <ArrowUp className="w-3.5 h-3.5" />
+                      </button>
+
+                      {/* Move Down Button */}
+                      <button
+                        type="button"
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          await reorderListItem(item.listId, item.id, 'down');
+                        }}
+                        className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                        title="Move Down"
+                      >
+                        <ArrowDown className="w-3.5 h-3.5" />
+                      </button>
+
+                      {/* Eliminate Button */}
+                      <button
+                        type="button"
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          await deleteListItem(
+                            item.listId,
+                            item.id,
+                            item.completed,
+                            item.title,
+                            {
+                              email: userProfile?.email || user?.email || '',
+                              displayName: userProfile?.displayName || user?.displayName || 'Me'
+                            }
+                          );
+                        }}
+                        className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/40 transition"
+                        title="Eliminate item"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+
                       {/* Edit Details */}
                       <button
                         type="button"

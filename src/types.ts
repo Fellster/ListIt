@@ -48,6 +48,7 @@ export interface ListItemModel {
   completedByName?: string;
   completedAt?: string;
   category?: string;
+  store?: string;
   quantity?: number;
   unit?: string;
   estimatedPrice?: number;
@@ -173,22 +174,25 @@ export const BACKGROUND_PRESETS: { id: BackgroundPatternOption; name: string; pr
   { id: 'dark-obsidian', name: 'Dark Mode Obsidian', previewClass: 'bg-slate-950 text-slate-100', description: 'Deep contrast dark theme for low light' },
 ];
 
-export const GROCERY_CATEGORIES = [
-  'Produce',
-  'Dairy & Refrigerated',
-  'Meat & Seafood',
-  'Bakery & Bread',
-  'Pantry & Grains',
-  'Canned & Jarred',
-  'Frozen Foods',
-  'Snacks & Treats',
-  'Beverages',
-  'Household & Cleaning',
-  'Personal Care',
-  'Other'
+export const GROCERY_STORES = [
+  "Trader Joe's",
+  'Costco',
+  'Whole Foods',
+  'Target',
+  'Safeway',
+  'Walmart',
+  'Kroger',
+  'Aldi',
+  'Sprouts',
+  'CVS / Pharmacy',
+  'Home Depot / Hardware',
+  'Local Market',
+  'Other Store'
 ] as const;
 
-export type GroceryCategory = (typeof GROCERY_CATEGORIES)[number];
+export type GroceryStore = (typeof GROCERY_STORES)[number];
+export const GROCERY_CATEGORIES = GROCERY_STORES;
+export type GroceryCategory = GroceryStore;
 
 export const LIST_COLOR_PALETTES = [
   { id: 'emerald', label: 'Emerald', bg: 'bg-emerald-500', text: 'text-emerald-700', border: 'border-emerald-300', lightBg: 'bg-emerald-50' },

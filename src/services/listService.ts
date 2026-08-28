@@ -642,6 +642,135 @@ export async function updateListItem(
 }
 
 /**
+ * Reorders an item within a list up or down
+ */
+export async function reorderListItem(
+  listId: string,
+  itemId: string,
+  direction: 'up' | 'down'
+) {
+  const currentItems = [...getLocalItems(listId)];
+  const index = currentItems.findIndex((it) => it.id === itemId);
+  if (index === -1) return;
+
+  const targetIndex = direction === 'up' ? index - 1 : index + 1;
+  if (targetIndex < 0 || targetIndex >= currentItems.length) return;
+
+  // Swap elements
+  const temp = currentItems[index];
+  currentItems[index] = currentItems[targetIndex];
+  currentItems[targetIndex] = temp;
+
+  // Re-assign order numbers
+  const updated = currentItems.map((item, idx) => ({
+    ...item,
+    order: idx,
+    updatedAt: new Date().toISOString() as any,
+  }));
+
+  saveLocalItems(listId, updated);
+
+  try {
+    const batch = writeBatch(db);
+    updated.forEach((it) => {
+      const ref = doc(db, 'lists', listId, 'items', it.id);
+      batch.update(ref, { order: it.order, updatedAt: serverTimestamp() });
+    });
+    await batch.commit();
+  } catch (err) {
+    console.info('Firestore reorder notice:', err);
+  }
+}
+
+/**
+ * Reorders items in a list from a complete sequence
+ */
+export async function reorderAllListItems(
+  listId: string,
+  reorderedItems: ListItemModel[]
+) {
+  const currentItems = getLocalItems(listId);
+  const updatedMap = new Map<string, ListItemModel>();
+  reorderedItems.forEach((item, idx) => {
+    updatedMap.set(item.id, {
+      ...item,
+      order: idx,
+      updatedAt: new Date().toISOString() as any,
+    });
+  });
+
+  const nextItems = currentItems.map((item) => {
+    if (updatedMap.has(item.id)) {
+      return updatedMap.get(item.id)!;
+    }
+    return item;
+  });
+
+  // Re-sort to maintain clean order
+  nextItems.sort((a, b) => {
+    if (a.completed !== b.completed) {
+      return a.completed ? 1 : -1;
+    }
+    if (a.order !== undefined && b.order !== undefined && a.order !== b.order) {
+      return a.order - b.order;
+    }
+    return 0;
+  });
+
+  saveLocalItems(listId, nextItems);
+
+  try {
+    const batch = writeBatch(db);
+    reorderedItems.forEach((it, idx) => {
+      const ref = doc(db, 'lists', listId, 'items', it.id);
+      const updates: any = { order: idx, updatedAt: serverTimestamp() };
+      if (it.store) updates.store = it.store;
+      if (it.category) updates.category = it.category;
+      batch.update(ref, updates);
+    });
+    await batch.commit();
+  } catch (err) {
+    console.info('Firestore batch reorder notice:', err);
+  }
+}
+
+/**
+ * Moves an item from one list to another list
+ */
+export async function moveItemToList(
+  sourceListId: string,
+  targetListId: string,
+  item: ListItemModel,
+  user: { email: string; displayName: string }
+) {
+  if (sourceListId === targetListId) return;
+
+  // Remove from source list
+  await deleteListItem(sourceListId, item.id, item.completed, item.title, user);
+
+  // Add to target list
+  await addListItem(
+    targetListId,
+    {
+      title: item.title,
+      category: item.category,
+      store: item.store,
+      quantity: item.quantity,
+      unit: item.unit,
+      priority: item.priority,
+      location: item.location,
+      timeScheduled: item.timeScheduled,
+      dueDate: item.dueDate,
+      estimatedPrice: item.estimatedPrice,
+      notes: item.notes,
+      customFactors: item.customFactors,
+      completed: item.completed,
+    },
+    user
+  );
+}
+
+/**
  * Toggles an item's completed status
  */
 export async function toggleListItem(
@@ -1007,13 +1136,69 @@ export async function ensureDefaultUserLists(
     notes: "Pick up organic spinach, pasta sauce, and sourdough bread."
   }, user);
 
-  // Create a collaborative Grocery list too
-  await createList({
-    title: "Weekly Grocery & Market Run",
-    description: "Shared shopping items organized by grocery aisles with cost tracker",
+  // Create 1 unified Grocery list tagged with store
+  const groceryListId = await createList({
+    title: "Grocery List",
+    description: "Single shopping list tagged by store with ability to group by store",
     type: 'grocery',
-    color: 'amber',
-    icon: 'shopping-cart'
+    color: 'emerald',
+    icon: '🛒'
+  }, user);
+
+  // Add initial starter grocery items tagged with stores
+  await addListItem(groceryListId, {
+    title: "Organic Bananas",
+    completed: false,
+    quantity: 2,
+    unit: "lbs",
+    store: "Trader Joe's",
+    category: "Trader Joe's",
+    priority: "medium",
+    estimatedPrice: 2.29,
+  }, user);
+
+  await addListItem(groceryListId, {
+    title: "Kirkland Paper Towels",
+    completed: false,
+    quantity: 1,
+    unit: "pack",
+    store: "Costco",
+    category: "Costco",
+    priority: "high",
+    estimatedPrice: 21.99,
+  }, user);
+
+  await addListItem(groceryListId, {
+    title: "Almond Milk",
+    completed: false,
+    quantity: 1,
+    unit: "gal",
+    store: "Whole Foods",
+    category: "Whole Foods",
+    priority: "medium",
+    estimatedPrice: 4.49,
+  }, user);
+
+  await addListItem(groceryListId, {
+    title: "Dish Soap",
+    completed: false,
+    quantity: 1,
+    unit: "bottle",
+    store: "Target",
+    category: "Target",
+    priority: "low",
+    estimatedPrice: 3.89,
+  }, user);
+
+  await addListItem(groceryListId, {
+    title: "Greek Yogurt (Honey & Plain)",
+    completed: false,
+    quantity: 32,
+    unit: "oz",
+    store: "Trader Joe's",
+    category: "Trader Joe's",
+    priority: "medium",
+    estimatedPrice: 5.99,
   }, user);
 
   return getLocalLists();

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ListModel, PriorityLevel, GROCERY_CATEGORIES } from '../types';
+import { ListModel, PriorityLevel, GROCERY_STORES } from '../types';
 import { addListItem } from '../services/listService';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
@@ -18,7 +18,8 @@ import {
   Tag,
   Calendar,
   AlertCircle,
-  FolderOpen
+  FolderOpen,
+  Store
 } from 'lucide-react';
 
 interface AddToListModalProps {
@@ -44,7 +45,7 @@ export const AddToListModal: React.FC<AddToListModalProps> = ({
   const [title, setTitle] = useState('');
   const [quantity, setQuantity] = useState<number>(1);
   const [unit, setUnit] = useState<string>('pcs');
-  const [category, setCategory] = useState<string>('Produce');
+  const [category, setCategory] = useState<string>("Trader Joe's");
   const [priority, setPriority] = useState<PriorityLevel>('medium');
   const [location, setLocation] = useState('');
   const [timeScheduled, setTimeScheduled] = useState('');
@@ -115,6 +116,7 @@ export const AddToListModal: React.FC<AddToListModalProps> = ({
         quantity: isGrocery ? quantity : undefined,
         unit: isGrocery ? unit : undefined,
         category: isGrocery ? category : undefined,
+        store: isGrocery ? category : undefined,
         priority,
         location: location.trim() || undefined,
         timeScheduled: timeScheduled.trim() || undefined,
@@ -297,15 +299,16 @@ export const AddToListModal: React.FC<AddToListModalProps> = ({
               </div>
 
               <div>
-                <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  Department
+                <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-1">
+                  <Store className="w-3 h-3 text-emerald-500" />
+                  <span>Store</span>
                 </label>
                 <select
                   value={category}
                   onChange={(e) => setCategory(e.target.value)}
-                  className="w-full px-2 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white"
+                  className="w-full px-2 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white font-medium"
                 >
-                  {GROCERY_CATEGORIES.map((c) => (
+                  {GROCERY_STORES.map((c) => (
                     <option key={c} value={c}>
                       {c}
                     </option>
