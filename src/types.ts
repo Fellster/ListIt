@@ -16,11 +16,14 @@ export interface SharedMember {
   avatarColor?: string;
 }
 
+export type HeadingKey = 'today' | 'grocery' | 'home' | 'other';
+
 export interface ListModel {
   id: string;
   title: string;
   description?: string;
   type: ListType;
+  heading?: HeadingKey;
   color: string;
   icon: string;
   ownerId: string;
@@ -36,6 +39,41 @@ export interface ListModel {
   updatedAt: any;
   itemCount?: number;
   completedCount?: number;
+}
+
+export function getListHeading(list: ListModel): HeadingKey {
+  if (list.heading) return list.heading;
+  const t = (list.title || '').toLowerCase();
+  if (t === 'today' || t === "today's list" || t.includes('today')) return 'today';
+  if (
+    list.type === 'grocery' ||
+    t.includes('grocery') ||
+    t.includes('market') ||
+    t.includes('store') ||
+    t.includes('costco') ||
+    t.includes('trader joe') ||
+    t.includes('safeway') ||
+    t.includes('target') ||
+    t.includes('supermarket') ||
+    t.includes('food') ||
+    t.includes('shop')
+  ) {
+    return 'grocery';
+  }
+  if (
+    t === 'home' ||
+    t.includes('home') ||
+    t.includes('house') ||
+    t.includes('chore') ||
+    t.includes('repair') ||
+    t.includes('yard') ||
+    t.includes('garden') ||
+    t.includes('cleaning') ||
+    t.includes('maintenance')
+  ) {
+    return 'home';
+  }
+  return 'other';
 }
 
 export interface ListItemModel {
@@ -174,7 +212,19 @@ export const BACKGROUND_PRESETS: { id: BackgroundPatternOption; name: string; pr
   { id: 'dark-obsidian', name: 'Dark Mode Obsidian', previewClass: 'bg-slate-950 text-slate-100', description: 'Deep contrast dark theme for low light' },
 ];
 
+export const LIST_COLOR_PALETTES = [
+  { id: 'emerald', label: 'Emerald', bg: 'bg-emerald-500', text: 'text-emerald-700', border: 'border-emerald-300', lightBg: 'bg-emerald-50' },
+  { id: 'indigo', label: 'Indigo', bg: 'bg-indigo-500', text: 'text-indigo-700', border: 'border-indigo-300', lightBg: 'bg-indigo-50' },
+  { id: 'amber', label: 'Amber', bg: 'bg-amber-500', text: 'text-amber-700', border: 'border-amber-300', lightBg: 'bg-amber-50' },
+  { id: 'rose', label: 'Rose', bg: 'bg-rose-500', text: 'text-rose-700', border: 'border-rose-300', lightBg: 'bg-rose-50' },
+  { id: 'violet', label: 'Violet', bg: 'bg-violet-500', text: 'text-violet-700', border: 'border-violet-300', lightBg: 'bg-violet-50' },
+  { id: 'sky', label: 'Sky Blue', bg: 'bg-sky-500', text: 'text-sky-700', border: 'border-sky-300', lightBg: 'bg-sky-50' },
+  { id: 'teal', label: 'Teal', bg: 'bg-teal-500', text: 'text-teal-700', border: 'border-teal-300', lightBg: 'bg-teal-50' },
+  { id: 'orange', label: 'Orange', bg: 'bg-orange-500', text: 'text-orange-700', border: 'border-orange-300', lightBg: 'bg-orange-50' },
+];
+
 export const GROCERY_STORES = [
+  'Any',
   "Trader Joe's",
   'Costco',
   'Whole Foods',
@@ -194,13 +244,3 @@ export type GroceryStore = (typeof GROCERY_STORES)[number];
 export const GROCERY_CATEGORIES = GROCERY_STORES;
 export type GroceryCategory = GroceryStore;
 
-export const LIST_COLOR_PALETTES = [
-  { id: 'emerald', label: 'Emerald', bg: 'bg-emerald-500', text: 'text-emerald-700', border: 'border-emerald-300', lightBg: 'bg-emerald-50' },
-  { id: 'indigo', label: 'Indigo', bg: 'bg-indigo-500', text: 'text-indigo-700', border: 'border-indigo-300', lightBg: 'bg-indigo-50' },
-  { id: 'amber', label: 'Amber', bg: 'bg-amber-500', text: 'text-amber-700', border: 'border-amber-300', lightBg: 'bg-amber-50' },
-  { id: 'rose', label: 'Rose', bg: 'bg-rose-500', text: 'text-rose-700', border: 'border-rose-300', lightBg: 'bg-rose-50' },
-  { id: 'violet', label: 'Violet', bg: 'bg-violet-500', text: 'text-violet-700', border: 'border-violet-300', lightBg: 'bg-violet-50' },
-  { id: 'sky', label: 'Sky Blue', bg: 'bg-sky-500', text: 'text-sky-700', border: 'border-sky-300', lightBg: 'bg-sky-50' },
-  { id: 'teal', label: 'Teal', bg: 'bg-teal-500', text: 'text-teal-700', border: 'border-teal-300', lightBg: 'bg-teal-50' },
-  { id: 'orange', label: 'Orange', bg: 'bg-orange-500', text: 'text-orange-700', border: 'border-orange-300', lightBg: 'bg-orange-50' },
-];

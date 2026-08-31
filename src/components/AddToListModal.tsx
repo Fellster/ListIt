@@ -1,25 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { ListModel, PriorityLevel, GROCERY_STORES } from '../types';
+import { ListModel, GROCERY_STORES } from '../types';
 import { addListItem } from '../services/listService';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
-import { useCalendar } from '../context/CalendarContext';
 import { useSpeechRecognition } from '../utils/useSpeechRecognition';
-import { parseVoiceDictation } from '../utils/voiceDictationParser';
 import {
   X,
   Plus,
   Mic,
-  MicOff,
-  Sparkles,
   MapPin,
   Clock,
-  DollarSign,
-  Tag,
   Calendar,
-  AlertCircle,
-  FolderOpen,
-  Store
+  FolderOpen
 } from 'lucide-react';
 
 interface AddToListModalProps {
@@ -39,23 +31,19 @@ export const AddToListModal: React.FC<AddToListModalProps> = ({
 }) => {
   const { user, userProfile } = useAuth();
   const { activeAccent } = useTheme();
-  const { isConnected: isCalendarConnected, syncTaskToCalendar } = useCalendar();
 
   const [selectedListId, setSelectedListId] = useState<string>('');
-  const [title, setTitle] = useState('');
-  const [quantity, setQuantity] = useState<number>(1);
-  const [unit, setUnit] = useState<string>('pcs');
-  const [category, setCategory] = useState<string>("Trader Joe's");
-  const [priority, setPriority] = useState<PriorityLevel>('medium');
-  const [location, setLocation] = useState('');
-  const [timeScheduled, setTimeScheduled] = useState('');
-  const [dueDate, setDueDate] = useState(new Date().toISOString().split('T')[0]);
-  const [estimatedPrice, setEstimatedPrice] = useState('');
-  const [notes, setNotes] = useState('');
-  const [isForToday, setIsForToday] = useState(true);
-  const [syncToGcal, setSyncToGcal] = useState(true);
+  
+  // 1. What
+  const [what, setWhat] = useState('');
+  // 2. Where
+  const [where, setWhere] = useState('');
+  // 3. When
+  const [whenDate, setWhenDate] = useState(new Date().toISOString().split('T')[0]);
+  const [whenTime, setWhenTime] = useState('');
+
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [showMoreDetails, setShowMoreDetails] = useState(false);
+  const [activeVoiceField, setActiveVoiceField] = useState<'what' | 'where' | 'whenTime' | null>(null);
 
   // Setup initial selected list
   useEffect(() => {
@@ -63,91 +51,76 @@ export const AddToListModal: React.FC<AddToListModalProps> = ({
       if (defaultListId && lists.some((l) => l.id === defaultListId)) {
         setSelectedListId(defaultListId);
       } else if (lists.length > 0) {
-        // Pick primary daily list or first list
-        const daily = lists.find(
-          (l) => l.isDailyFocus || l.title.toLowerCase().includes('today') || l.title.toLowerCase().includes('daily')
-        );
-        setSelectedListId(daily ? daily.id : lists[0].id);
+        const fallback = lists.find(
+          (l) => l.title.toLowerCase() === 'today' || l.title.toLowerCase() === "today's list"
+        ) || lists.find((l) => l.type === 'todo') || lists[0];
+        setSelectedListId(fallback.id);
       }
     }
   }, [isOpen, defaultListId, lists]);
 
-  const currentList = lists.find((l) => l.id === selectedListId) || lists[0];
-  const isGrocery = currentList?.type === 'grocery';
-
-  // Speech Recognition for smart item dictation
   const {
-    isSupported: isVoiceSupported,
     isListening,
-    transcript,
-    interimTranscript,
     startListening,
     stopListening
   } = useSpeechRecognition((finalText) => {
-    if (!finalText.trim()) return;
-    const parsed = parseVoiceDictation(finalText, currentList?.type || 'todo');
-    setTitle(parsed.title || finalText);
-    if (parsed.quantity) setQuantity(parsed.quantity);
-    if (parsed.unit) setUnit(parsed.unit);
-    if (parsed.category) setCategory(parsed.category);
-    if (parsed.location) setLocation(parsed.location);
-    if (parsed.timeScheduled) setTimeScheduled(parsed.timeScheduled);
-    if (parsed.priority) setPriority(parsed.priority);
-    if (parsed.estimatedPrice) setEstimatedPrice(String(parsed.estimatedPrice));
-    if (parsed.notes) setNotes(parsed.notes);
+    if (activeVoiceField === 'what') {
+      setWhat(finalText);
+    } else if (activeVoiceField === 'where') {
+      setWhere(finalText);
+    } else if (activeVoiceField === 'whenTime') {
+      setWhenTime(finalText);
+    }
+    setActiveVoiceField(null);
   });
+
+  const handleStartVoice = (field: 'what' | 'where' | 'whenTime') => {
+    if (isListening && activeVoiceField === field) {
+      stopListening();
+      setActiveVoiceField(null);
+    } else {
+      setActiveVoiceField(field);
+      startListening({ continuous: false });
+    }
+  };
 
   if (!isOpen) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim() || !user || !selectedListId) return;
-
-    setIsSubmitting(true);
+    if (!what.trim()) {
+      const inputEl = document.getElementById('add-to-list-what-input');
+      if (inputEl) inputEl.focus();
+      return;
+    }
+    if (!selectedListId || isSubmitting) return;
     try {
       const userMeta = {
-        email: userProfile?.email || user.email || '',
-        displayName: userProfile?.displayName || user.displayName || 'Me'
+        email: (userProfile?.email || user?.email || 'keithfell1@gmail.com').toLowerCase(),
+        displayName: userProfile?.displayName || user?.displayName || 'Keith Fell'
       };
 
+      const cleanWhere = where.trim() || undefined;
       const payload = {
-        title: title.trim(),
+        title: what.trim(),
         completed: false,
-        quantity: isGrocery ? quantity : undefined,
-        unit: isGrocery ? unit : undefined,
-        category: isGrocery ? category : undefined,
-        store: isGrocery ? category : undefined,
-        priority,
-        location: location.trim() || undefined,
-        timeScheduled: timeScheduled.trim() || undefined,
-        dueDate: dueDate || undefined,
-        isForToday,
-        estimatedPrice: estimatedPrice ? parseFloat(estimatedPrice) : undefined,
-        notes: notes.trim() || undefined
+        location: cleanWhere,
+        store: cleanWhere,
+        category: cleanWhere,
+        timeScheduled: whenTime.trim() || undefined,
+        dueDate: whenDate || undefined,
+        isForToday: true,
       };
 
       const newItemId = await addListItem(selectedListId, payload, userMeta);
-
-      if (syncToGcal && isCalendarConnected && timeScheduled) {
-        syncTaskToCalendar({
-          id: newItemId,
-          listId: selectedListId,
-          ...payload,
-          createdAt: new Date()
-        }).catch((err) => console.warn('Auto gcal sync notice:', err));
-      }
 
       if (onItemAdded) {
         onItemAdded(selectedListId, newItemId);
       }
 
-      // Reset fields & close
-      setTitle('');
-      setLocation('');
-      setTimeScheduled('');
-      setEstimatedPrice('');
-      setNotes('');
-      setShowMoreDetails(false);
+      setWhat('');
+      setWhere('');
+      setWhenTime('');
       onClose();
     } catch (err) {
       console.error('Failed to add item:', err);
@@ -159,23 +132,20 @@ export const AddToListModal: React.FC<AddToListModalProps> = ({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
       <div
-        className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+        className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <div
-              className="w-9 h-9 rounded-xl flex items-center justify-center text-white font-bold"
+              className="w-8 h-8 rounded-xl flex items-center justify-center text-white font-bold"
               style={{ backgroundColor: activeAccent.primary }}
             >
-              <Plus className="w-5 h-5" />
+              <Plus className="w-4 h-4" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-slate-900 dark:text-white">Add on to List</h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Quickly add a task or item to any of your lists
-              </p>
+              <h2 className="text-sm font-bold text-slate-900 dark:text-white">Add Task / Item</h2>
             </div>
           </div>
 
@@ -194,7 +164,7 @@ export const AddToListModal: React.FC<AddToListModalProps> = ({
           <div>
             <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5 flex items-center gap-1.5">
               <FolderOpen className="w-3.5 h-3.5 text-slate-500" />
-              <span>Select List to Add To</span>
+              <span>List</span>
             </label>
             <select
               value={selectedListId}
@@ -203,253 +173,161 @@ export const AddToListModal: React.FC<AddToListModalProps> = ({
             >
               {lists.map((l) => (
                 <option key={l.id} value={l.id}>
-                  {l.type === 'grocery' ? '🛒' : '📋'} {l.title} ({l.type === 'grocery' ? 'Grocery' : 'To-Do'})
+                  {l.type === 'grocery' ? '🛒' : '📋'} {l.title}
                 </option>
               ))}
             </select>
           </div>
 
-          {/* Item / Task Title + Voice Button */}
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
-                {isGrocery ? 'Item Name *' : 'What needs to be done? *'}
-              </label>
-              {isVoiceSupported && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (isListening) stopListening();
-                    else startListening();
+          {/* 1. What */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                <span 
+                  className="w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-extrabold"
+                  style={{
+                    backgroundColor: activeAccent.light,
+                    color: activeAccent.text
                   }}
-                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition ${
-                    isListening
-                      ? 'bg-rose-100 text-rose-700 border border-rose-200 animate-pulse'
-                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200'
-                  }`}
                 >
-                  {isListening ? (
-                    <>
-                      <MicOff className="w-3.5 h-3.5 text-rose-600" />
-                      <span>Listening...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Mic className="w-3.5 h-3.5 text-rose-500" />
-                      <span>Voice Dictate</span>
-                    </>
-                  )}
-                </button>
-              )}
-            </div>
-
-            <div className="relative">
-              <input
-                type="text"
-                required
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder={
-                  isListening
-                    ? 'Listening... Speak naturally!'
-                    : isGrocery
-                    ? 'e.g. 2 gallons organic milk'
-                    : 'e.g. Review financial report at 2pm'
-                }
-                className={`w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border rounded-xl text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 ${
-                  isListening ? 'border-rose-400 bg-rose-50/30' : 'border-slate-200 dark:border-slate-700'
+                  1
+                </span>
+                <span>What</span>
+              </label>
+              <button
+                type="button"
+                onClick={() => handleStartVoice('what')}
+                className={`text-[11px] font-semibold px-2 py-0.5 rounded-md flex items-center gap-1 transition ${
+                  isListening && activeVoiceField === 'what'
+                    ? 'bg-rose-500 text-white animate-pulse'
+                    : 'text-slate-400 hover:text-rose-600 hover:bg-slate-100 dark:hover:bg-slate-800'
                 }`}
-                autoFocus
-              />
-            </div>
-            {isListening && (
-              <p className="mt-1 text-[11px] text-rose-600 animate-pulse font-medium">
-                🎙️ Speak naturally with quantities, locations or times.
-              </p>
-            )}
-          </div>
-
-          {/* Grocery Specific: Quantity & Category */}
-          {isGrocery && (
-            <div className="grid grid-cols-3 gap-3">
-              <div>
-                <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  Qty
-                </label>
-                <input
-                  type="number"
-                  min="1"
-                  value={quantity}
-                  onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value, 10) || 1))}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm text-slate-900 dark:text-white"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  Unit
-                </label>
-                <input
-                  type="text"
-                  value={unit}
-                  onChange={(e) => setUnit(e.target.value)}
-                  placeholder="pcs, lbs, gal"
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm text-slate-900 dark:text-white"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-1">
-                  <Store className="w-3 h-3 text-emerald-500" />
-                  <span>Store</span>
-                </label>
-                <select
-                  value={category}
-                  onChange={(e) => setCategory(e.target.value)}
-                  className="w-full px-2 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white font-medium"
-                >
-                  {GROCERY_STORES.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-          )}
-
-          {/* Due date & Today flag */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-1">
-                <Calendar className="w-3 h-3 text-slate-400" />
-                <span>Due Date</span>
-              </label>
-              <input
-                type="date"
-                value={dueDate}
-                onChange={(e) => setDueDate(e.target.value)}
-                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white"
-              />
-            </div>
-
-            <div>
-              <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
-                Priority
-              </label>
-              <select
-                value={priority}
-                onChange={(e) => setPriority(e.target.value as PriorityLevel)}
-                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white font-medium"
+                title="Dictate with voice"
               >
-                <option value="urgent">🚨 Urgent</option>
-                <option value="high">🔴 High</option>
-                <option value="medium">🟡 Medium</option>
-                <option value="low">🟢 Low</option>
-              </select>
+                <Mic className="w-3 h-3" />
+                <span>{isListening && activeVoiceField === 'what' ? 'Listening...' : 'Voice'}</span>
+              </button>
             </div>
+
+            <input
+              id="add-to-list-what-input"
+              type="text"
+              required
+              value={what}
+              onChange={(e) => setWhat(e.target.value)}
+              placeholder="What needs to be done..."
+              className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2"
+              autoFocus
+            />
           </div>
 
-          {/* Toggle More Details (Location, Scheduled Time, Price, Notes) */}
-          <div>
-            <button
-              type="button"
-              onClick={() => setShowMoreDetails(!showMoreDetails)}
-              className="text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:underline flex items-center gap-1"
-            >
-              {showMoreDetails ? '− Hide additional details' : '+ Add Location, Time, Price, or Notes'}
-            </button>
+          {/* 2. Where */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                <span 
+                  className="w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-extrabold"
+                  style={{
+                    backgroundColor: activeAccent.light,
+                    color: activeAccent.text
+                  }}
+                >
+                  2
+                </span>
+                <MapPin className="w-3.5 h-3.5 text-rose-500" />
+                <span>Where</span>
+              </label>
+              <button
+                type="button"
+                onClick={() => handleStartVoice('where')}
+                className={`text-[11px] font-semibold px-2 py-0.5 rounded-md flex items-center gap-1 transition ${
+                  isListening && activeVoiceField === 'where'
+                    ? 'bg-rose-500 text-white animate-pulse'
+                    : 'text-slate-400 hover:text-rose-600 hover:bg-slate-100 dark:hover:bg-slate-800'
+                }`}
+                title="Dictate location"
+              >
+                <Mic className="w-3 h-3" />
+                <span>{isListening && activeVoiceField === 'where' ? 'Listening...' : 'Voice'}</span>
+              </button>
+            </div>
+
+            <input
+              type="text"
+              list="add-location-suggestions"
+              value={where}
+              onChange={(e) => setWhere(e.target.value)}
+              placeholder="Store, place, or location (default: Any)..."
+              className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2"
+            />
+            <datalist id="add-location-suggestions">
+              {GROCERY_STORES.map((s) => (
+                <option key={s} value={s} />
+              ))}
+              <option value="Home" />
+              <option value="Office" />
+              <option value="Online" />
+            </datalist>
           </div>
 
-          {showMoreDetails && (
-            <div className="p-3.5 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700 space-y-3 animate-in fade-in">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {/* Location */}
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-1">
-                    <MapPin className="w-3 h-3 text-rose-500" />
-                    <span>Store / Location</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={location}
-                    onChange={(e) => setLocation(e.target.value)}
-                    placeholder="e.g. Trader Joe's or Online"
-                    className="w-full px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs"
-                  />
-                </div>
-
-                {/* Scheduled Time */}
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-1">
-                    <Clock className="w-3 h-3 text-indigo-500" />
-                    <span>Scheduled Time</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={timeScheduled}
-                    onChange={(e) => setTimeScheduled(e.target.value)}
-                    placeholder="e.g. 2:30 PM"
-                    className="w-full px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs"
-                  />
-                </div>
-              </div>
-
-              {/* Price */}
-              <div>
-                <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-1">
-                  <DollarSign className="w-3 h-3 text-emerald-500" />
-                  <span>Estimated Cost / Price ($)</span>
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={estimatedPrice}
-                  onChange={(e) => setEstimatedPrice(e.target.value)}
-                  placeholder="e.g. 5.99"
-                  className="w-full px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs"
-                />
-              </div>
-
-              {/* Notes */}
-              <div>
-                <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  Notes & Instructions
-                </label>
-                <textarea
-                  rows={2}
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Add any specific brand preferences, details, or checklist instructions..."
-                  className="w-full px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs"
-                />
-              </div>
-            </div>
-          )}
-
-          {/* Quick Checkboxes */}
-          <div className="pt-2 flex flex-col gap-2">
-            <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 dark:text-slate-300 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={isForToday}
-                onChange={(e) => setIsForToday(e.target.checked)}
-                className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500"
-              />
-              <span>Include on Today's Agenda</span>
+          {/* 3. When */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+              <span 
+                className="w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-extrabold"
+                style={{
+                  backgroundColor: activeAccent.light,
+                  color: activeAccent.text
+                }}
+              >
+                3
+              </span>
+              <Calendar className="w-3.5 h-3.5 text-blue-500" />
+              <span>When</span>
             </label>
 
-            {isCalendarConnected && timeScheduled && (
-              <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 dark:text-slate-300 cursor-pointer">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">
+                  Date
+                </label>
                 <input
-                  type="checkbox"
-                  checked={syncToGcal}
-                  onChange={(e) => setSyncToGcal(e.target.checked)}
-                  className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500"
+                  type="date"
+                  value={whenDate}
+                  onChange={(e) => setWhenDate(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2"
                 />
-                <span>Sync to Google Calendar</span>
-              </label>
-            )}
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                    <Clock className="w-3 h-3 text-indigo-500" />
+                    <span>Time</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => handleStartVoice('whenTime')}
+                    className={`text-[10px] font-semibold px-1.5 py-0.2 rounded flex items-center gap-0.5 transition ${
+                      isListening && activeVoiceField === 'whenTime'
+                        ? 'bg-rose-500 text-white animate-pulse'
+                        : 'text-slate-400 hover:text-rose-600'
+                    }`}
+                    title="Dictate time"
+                  >
+                    <Mic className="w-2.5 h-2.5" />
+                    <span>{isListening && activeVoiceField === 'whenTime' ? 'Listening...' : 'Voice'}</span>
+                  </button>
+                </div>
+                <input
+                  type="text"
+                  value={whenTime}
+                  onChange={(e) => setWhenTime(e.target.value)}
+                  placeholder="e.g. 10:00 AM, 3:30 PM"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2"
+                />
+              </div>
+            </div>
           </div>
         </form>
 
@@ -465,13 +343,13 @@ export const AddToListModal: React.FC<AddToListModalProps> = ({
 
           <button
             type="button"
+            id="btn-modal-add-task"
             onClick={handleSubmit}
-            disabled={!title.trim() || isSubmitting}
-            className="px-5 py-2 text-xs font-bold text-white rounded-xl shadow-xs transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+            className="px-5 py-2 text-xs font-bold text-white rounded-xl shadow-xs transition hover:brightness-110 active:scale-95 flex items-center gap-1.5 cursor-pointer"
             style={{ backgroundColor: activeAccent.primary }}
           >
-            <Plus className="w-4 h-4" />
-            <span>Add Item</span>
+            <Plus className="w-4 h-4 stroke-[2.5]" />
+            <span>Add Task</span>
           </button>
         </div>
       </div>

@@ -3,28 +3,25 @@ import { ListItemModel, ListModel } from '../types';
 import { 
   toggleListItem, 
   deleteListItem,
-  reorderListItem,
+  addListItem,
+  createList,
   moveItemToList
 } from '../services/listService';
+import { parseItemInput } from '../utils/groceryCategorizer';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
-import { useCalendar } from '../context/CalendarContext';
+import { useSpeechRecognition } from '../utils/useSpeechRecognition';
 import confetti from 'canvas-confetti';
 import { 
-  Calendar, 
-  Clock, 
-  MapPin, 
   CheckCircle2, 
   Circle, 
   Plus, 
-  DollarSign, 
-  CalendarPlus, 
-  RefreshCw,
-  Edit3,
   Trash2,
-  ArrowUp,
-  ArrowDown,
-  Store
+  Mic,
+  Calendar as CalendarIcon,
+  Edit3,
+  MapPin,
+  MoveRight
 } from 'lucide-react';
 
 interface TodayViewProps {
@@ -42,64 +39,147 @@ export const TodayView: React.FC<TodayViewProps> = ({
   allTodayItems,
   onSelectItem,
   onOpenList,
-  onOpenCreateList,
-  onOpenAddToList,
 }) => {
   const { user, userProfile } = useAuth();
   const { activeAccent } = useTheme();
-  const { 
-    isConnected: isCalendarConnected, 
-    isConnecting: isCalendarConnecting,
-    connectCalendar, 
-    todayEvents, 
-    loadingEvents, 
-    refreshEvents,
-    syncTaskToCalendar 
-  } = useCalendar();
+  const [newItemTitle, setNewItemTitle] = useState('');
+  const [isAdding, setIsAdding] = useState(false);
+  const [movingItemId, setMovingItemId] = useState<string | null>(null);
 
-  const [syncingItemId, setSyncingItemId] = useState<string | null>(null);
+  const {
+    isListening,
+    startListening,
+    stopListening,
+  } = useSpeechRecognition((text) => {
+    setNewItemTitle(text);
+  });
+
+  const currentUser = {
+    email: (userProfile?.email || user?.email || 'keithfell1@gmail.com').toLowerCase(),
+    displayName: userProfile?.displayName || user?.displayName || 'Keith Fell',
+    uid: user?.uid || userProfile?.uid || 'user_keithfell1_gmail_com'
+  };
+
+  const handleTransferToList = async (e: React.MouseEvent, item: ListItemModel, targetListId: string) => {
+    e.stopPropagation();
+    setMovingItemId(null);
+    if (!item.listId || targetListId === item.listId) return;
+
+    try {
+      await moveItemToList(
+        item.listId,
+        targetListId,
+        {
+          ...item,
+          isForToday: false,
+          dueDate: undefined,
+        },
+        currentUser
+      );
+    } catch (err) {
+      console.error('Error moving item to list:', err);
+    }
+  };
+
+  // Find or determine default target list for today tasks (dedicated Today list first)
+  const defaultList = useMemo(() => {
+    return lists.find((l) => l.title.toLowerCase() === 'today' || l.title.toLowerCase() === "today's list") 
+      || lists.find((l) => l.type === 'todo')
+      || lists[0];
+  }, [lists]);
+
+  // Handle Quick Add for Today
+  const handleQuickAdd = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isAdding) return;
+    if (!newItemTitle.trim()) {
+      const inputEl = document.getElementById('today-view-input');
+      if (inputEl) inputEl.focus();
+      return;
+    }
+
+    setIsAdding(true);
+    try {
+      let targetListId = defaultList?.id;
+      const existingToday = lists.find((l) => l.title.toLowerCase() === 'today' || l.title.toLowerCase() === "today's list");
+      
+      if (existingToday) {
+        targetListId = existingToday.id;
+      } else {
+        targetListId = await createList({
+          title: "Today",
+          description: "Daily reminders and tasks to do today",
+          type: 'todo',
+          color: 'emerald',
+          icon: 'calendar'
+        }, currentUser);
+      }
+
+      const todayStr = new Date().toISOString().split('T')[0];
+      const parsed = parseItemInput(newItemTitle.trim());
+
+      await addListItem(
+        targetListId,
+        {
+          title: parsed.title,
+          quantity: parsed.quantity > 1 ? parsed.quantity : undefined,
+          unit: parsed.quantity > 1 ? parsed.unit : undefined,
+          store: parsed.store,
+          category: parsed.store,
+          dueDate: todayStr,
+          isForToday: true,
+          priority: 'medium',
+          order: allTodayItems.length,
+        },
+        {
+          email: currentUser.email,
+          displayName: currentUser.displayName,
+        }
+      );
+
+      setNewItemTitle('');
+    } catch (err) {
+      console.error('Error adding today item:', err);
+    } finally {
+      setIsAdding(false);
+    }
+  };
 
   // Item completion toggle with confetti
   const handleToggle = async (item: ListItemModel) => {
-    if (!user) return;
-    const userMeta = {
-      email: userProfile?.email || user.email || '',
-      displayName: userProfile?.displayName || user.displayName || 'Me',
-      uid: user.uid
-    };
-
     const willComplete = !item.completed;
     if (willComplete) {
       try {
         confetti({
-          particleCount: 25,
-          spread: 40,
-          origin: { y: 0.8 },
-          colors: [activeAccent.primary, '#10b981', '#3b82f6', '#f59e0b']
+          particleCount: 30,
+          spread: 50,
+          origin: { y: 0.7 },
+          colors: ['#10b981', '#3b82f6', '#f59e0b']
         });
       } catch (e) {
         // ignore
       }
     }
 
-    await toggleListItem(item.listId, item.id, item.completed, userMeta, item.title);
+    await toggleListItem(item.listId, item.id, item.completed, currentUser, item.title);
   };
 
-  // Sync individual task to Google Calendar
-  const handleSyncItemToGcal = async (item: ListItemModel, e: React.MouseEvent) => {
+  const handleDelete = async (e: React.MouseEvent, item: ListItemModel) => {
     e.stopPropagation();
-    setSyncingItemId(item.id);
-    try {
-      await syncTaskToCalendar(item);
-    } catch (err) {
-      console.error('Manual gcal sync error:', err);
-    } finally {
-      setSyncingItemId(null);
-    }
+    await deleteListItem(
+      item.listId,
+      item.id,
+      item.completed,
+      item.title,
+      {
+        email: currentUser.email,
+        displayName: currentUser.displayName
+      }
+    );
   };
 
   // Items for today (pending items first, completed items below)
-  const filteredItems = useMemo(() => {
+  const sortedItems = useMemo(() => {
     return [...allTodayItems].sort((a, b) => {
       if (a.completed !== b.completed) {
         return a.completed ? 1 : -1;
@@ -108,398 +188,224 @@ export const TodayView: React.FC<TodayViewProps> = ({
     });
   }, [allTodayItems]);
 
-  return (
-    <div className="max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6 flex-1">
-      {/* Main Grid: Left side Today tasks, Right side Lists & Google Calendar widget */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 sm:gap-8">
-        {/* Left 2 Columns: Task Manager */}
-        <div className="lg:col-span-2 space-y-5">
-          {/* Task Items List */}
-          {filteredItems.length === 0 ? (
-            <div className="py-12 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl text-center p-8 space-y-3 shadow-2xs">
-              <div className="w-12 h-12 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 flex items-center justify-center text-xl mx-auto">
-                ✨
-              </div>
-              <h3 className="text-sm font-bold text-slate-800 dark:text-white">
-                Your agenda for today is clear!
-              </h3>
-              <p className="text-xs text-slate-400 max-w-sm mx-auto">
-                Use the "Add on to List" button in the top navigation to schedule tasks and items for today.
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-2.5">
-              {filteredItems.map((item) => {
-                const parentList = lists.find((l) => l.id === item.listId);
-                const isSyncing = syncingItemId === item.id;
+  const todayDateFormatted = useMemo(() => {
+    return new Intl.DateTimeFormat('en-US', {
+      weekday: 'long',
+      month: 'short',
+      day: 'numeric'
+    }).format(new Date());
+  }, []);
 
-                return (
-                  <div
-                    key={item.id}
-                    onClick={() => parentList && onSelectItem(item, parentList)}
-                    className={`group p-3.5 rounded-xl border transition-all cursor-pointer bg-white dark:bg-slate-900 flex items-start justify-between gap-3 shadow-2xs hover:shadow-sm ${
-                      item.completed
-                        ? 'border-slate-200/60 dark:border-slate-800 opacity-60 bg-slate-50/50 dark:bg-slate-900/50'
-                        : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
-                    }`}
+  return (
+    <div className="max-w-3xl w-full mx-auto px-4 sm:px-6 py-6 space-y-4 flex-1">
+      {/* Clean Header */}
+      <div className="flex items-center justify-between pb-2 border-b border-slate-200/80 dark:border-slate-800">
+        <div className="flex items-center gap-2">
+          <CalendarIcon className="w-5 h-5" style={{ color: activeAccent.primary }} />
+          <h1 className="text-xl font-extrabold text-slate-900 dark:text-white">
+            Today's List
+          </h1>
+        </div>
+        <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+          {todayDateFormatted}
+        </span>
+      </div>
+
+      {/* Quick Add Item Bar */}
+      {defaultList && (
+        <form onSubmit={handleQuickAdd} className="flex items-center gap-2">
+          <div className="relative flex-1">
+            <input
+              id="today-view-input"
+              type="text"
+              value={newItemTitle}
+              onChange={(e) => setNewItemTitle(e.target.value)}
+              placeholder={
+                isListening
+                  ? '🎙️ Listening... Speak now!'
+                  : 'Add an item for today...'
+              }
+              className={`w-full pl-3.5 pr-10 py-2.5 bg-white dark:bg-slate-900 border rounded-xl text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none transition shadow-2xs ${
+                isListening
+                  ? 'border-rose-400 bg-rose-50/30 text-rose-900 animate-pulse'
+                  : 'border-slate-200 dark:border-slate-800'
+              }`}
+              style={{ borderColor: newItemTitle.trim() ? activeAccent.primary : undefined }}
+            />
+            <button
+              type="button"
+              onClick={() => (isListening ? stopListening() : startListening())}
+              className={`absolute right-2.5 top-1/2 -translate-y-1/2 p-1.5 rounded-lg transition ${
+                isListening
+                  ? 'text-rose-600 bg-rose-100 dark:bg-rose-950/50 animate-bounce'
+                  : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'
+              }`}
+              title={isListening ? 'Stop recording' : 'Dictate with voice'}
+            >
+              <Mic className="w-4 h-4" />
+            </button>
+          </div>
+
+          <button
+            type="submit"
+            id="btn-add-item-today"
+            className="px-4 py-2.5 text-white text-sm font-bold rounded-xl shadow-xs transition flex items-center gap-1.5 shrink-0 cursor-pointer hover:brightness-110 active:scale-95"
+            style={{ backgroundColor: activeAccent.primary }}
+          >
+            <Plus className="w-4 h-4 stroke-[2.5]" />
+            <span>Add</span>
+          </button>
+        </form>
+      )}
+
+      {/* Actual List of Items */}
+      {sortedItems.length === 0 ? (
+        <div className="py-12 text-center text-slate-400 dark:text-slate-500 space-y-1 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-6">
+          <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+            No items on your list for today
+          </p>
+          <p className="text-xs">Type in the box above to add your first item.</p>
+        </div>
+      ) : (
+        <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl divide-y divide-slate-100 dark:divide-slate-800/80 shadow-2xs overflow-hidden">
+          {sortedItems.map((item) => {
+            const parentList = lists.find((l) => l.id === item.listId) || defaultList || lists[0];
+
+            return (
+              <div
+                key={item.id}
+                onClick={() => parentList && onSelectItem(item, parentList)}
+                className={`p-3.5 flex items-center justify-between gap-3 transition cursor-pointer group ${
+                  item.completed
+                    ? 'bg-slate-50/50 dark:bg-slate-900/40 text-slate-400 dark:text-slate-500'
+                    : 'hover:bg-slate-50/70 dark:hover:bg-slate-800/50 text-slate-900 dark:text-slate-100'
+                }`}
+              >
+                {/* Checkbox & Item Info on the same line */}
+                <div className="flex items-center gap-3 min-w-0 flex-1">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleToggle(item);
+                    }}
+                    className="transition shrink-0"
+                    style={{ color: activeAccent.primary }}
                   >
-                    {/* Left: Checkbox & Content */}
-                    <div className="flex items-start gap-3 flex-1 min-w-0">
+                    {item.completed ? (
+                      <CheckCircle2 
+                        className="w-5 h-5" 
+                        style={{ color: activeAccent.primary, fill: activeAccent.light }} 
+                      />
+                    ) : (
+                      <Circle className="w-5 h-5 text-slate-400 hover:text-slate-600 stroke-[2]" />
+                    )}
+                  </button>
+
+                  <div className="flex items-center gap-2 flex-wrap min-w-0 flex-1">
+                    <span
+                      className={`text-sm font-semibold leading-tight break-words ${
+                        item.completed ? 'line-through text-slate-400 dark:text-slate-500' : ''
+                      }`}
+                    >
+                      {item.title}
+                    </span>
+
+                    {/* Quantity */}
+                    {item.quantity && (
+                      <span className="text-xs font-semibold px-2 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-md shrink-0 border border-slate-200/60 dark:border-slate-700">
+                        {item.quantity} {item.unit || ''}
+                      </span>
+                    )}
+
+                    {/* Store badge if already set */}
+                    {item.store && (
+                      <span 
+                        className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md border shrink-0 flex items-center gap-0.5"
+                        style={{ 
+                          backgroundColor: activeAccent.light, 
+                          color: activeAccent.text, 
+                          borderColor: activeAccent.border 
+                        }}
+                      >
+                        <MapPin className="w-2.5 h-2.5" style={{ color: activeAccent.primary }} />
+                        <span>{item.store}</span>
+                      </span>
+                    )}
+
+                    {/* Edit button to bring up Task Editor */}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (parentList) onSelectItem(item, parentList);
+                      }}
+                      className="text-[11px] font-semibold px-2 py-0.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-md transition inline-flex items-center gap-1 shrink-0 border border-slate-200/60 dark:border-slate-700"
+                      title="Edit task (What, Where, When)"
+                    >
+                      <Edit3 className="w-3 h-3 text-slate-500 dark:text-slate-400" />
+                      <span>Edit</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Right: Move & Delete Buttons */}
+                <div className="flex items-center gap-1 shrink-0">
+                  {lists.filter((l) => l.id !== item.listId).length > 0 && (
+                    <div className="relative">
                       <button
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleToggle(item);
+                          setMovingItemId(movingItemId === item.id ? null : item.id);
                         }}
-                        className="mt-0.5 text-slate-400 hover:text-emerald-600 transition shrink-0"
+                        className="px-2 py-1 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition text-[11px] font-bold flex items-center gap-1 border border-slate-200/60 dark:border-slate-700"
+                        title="Move item to another list"
                       >
-                        {item.completed ? (
-                          <CheckCircle2 className="w-5 h-5 text-emerald-500 fill-emerald-50 dark:fill-emerald-950/40" />
-                        ) : (
-                          <Circle className="w-5 h-5 hover:stroke-emerald-600 stroke-[2]" />
-                        )}
+                        <MoveRight className="w-3 h-3" style={{ color: activeAccent.primary }} />
+                        <span className="hidden sm:inline">Move</span>
                       </button>
 
-                      <div className="space-y-1.5 flex-1 min-w-0">
-                        {/* Title & List Tag */}
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span
-                            className={`text-sm font-semibold leading-tight text-slate-900 dark:text-white ${
-                              item.completed ? 'line-through text-slate-400 dark:text-slate-500' : ''
-                            }`}
-                          >
-                            {item.title}
-                          </span>
-
-                          {/* Priority Tag */}
-                          {item.priority && item.priority !== 'medium' && (
-                            <span
-                              className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md uppercase tracking-wider ${
-                                item.priority === 'urgent'
-                                  ? 'bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300'
-                                  : item.priority === 'high'
-                                  ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
-                                  : 'bg-emerald-100 text-emerald-800'
-                              }`}
-                            >
-                              {item.priority}
-                            </span>
-                          )}
-
-                          {/* Parent List Chip */}
-                          {parentList && (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onOpenList(parentList);
-                              }}
-                              className="text-[10px] font-bold px-2 py-0.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-md transition inline-flex items-center gap-1"
-                            >
-                              <span>{parentList.type === 'grocery' ? '🛒' : '📋'}</span>
-                              <span>{parentList.title}</span>
-                            </button>
-                          )}
+                      {movingItemId === item.id && (
+                        <div 
+                          className="absolute right-0 top-full mt-1.5 w-48 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-200 dark:border-slate-700 py-1.5 z-40 animate-in fade-in zoom-in-95 duration-100"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <div className="px-3 py-1 text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">
+                            Move to list:
+                          </div>
+                          {lists
+                            .filter((l) => l.id !== item.listId)
+                            .map((target) => (
+                              <button
+                                key={target.id}
+                                type="button"
+                                onClick={(e) => handleTransferToList(e, item, target.id)}
+                                className="w-full text-left px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-2 transition truncate"
+                              >
+                                <span className="text-sm">{target.type === 'grocery' ? '🛒' : '📝'}</span>
+                                <span className="truncate">{target.title}</span>
+                              </button>
+                            ))}
                         </div>
-
-                        {/* Factors Row (Store, Location, Time, Price, Notes) */}
-                        <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-                          {(item.store || (parentList?.type === 'grocery' && item.category)) && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 rounded-md font-bold text-[11px] border border-emerald-200/60 dark:border-emerald-800">
-                              <Store className="w-3 h-3 text-emerald-600" />
-                              <span>{item.store || item.category}</span>
-                            </span>
-                          )}
-
-                          {item.location && (
-                            <a
-                              href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
-                                item.location
-                              )}`}
-                              target="_blank"
-                              rel="noreferrer"
-                              onClick={(e) => e.stopPropagation()}
-                              className="inline-flex items-center gap-1 px-2 py-0.5 bg-rose-50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-300 rounded-md font-medium hover:underline text-[11px]"
-                            >
-                              <MapPin className="w-3 h-3 text-rose-500" />
-                              <span>{item.location}</span>
-                            </a>
-                          )}
-
-                          {item.timeScheduled && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-indigo-50 dark:bg-indigo-950/30 text-indigo-700 dark:text-indigo-300 rounded-md font-medium text-[11px]">
-                              <Clock className="w-3 h-3 text-indigo-500" />
-                              <span>{item.timeScheduled}</span>
-                              {item.durationMinutes && (
-                                <span className="text-indigo-400">({item.durationMinutes}m)</span>
-                              )}
-                            </span>
-                          )}
-
-                          {item.estimatedPrice !== undefined && item.estimatedPrice > 0 && (
-                            <span className="inline-flex items-center gap-0.5 px-2 py-0.5 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 rounded-md font-bold text-[11px]">
-                              <DollarSign className="w-3 h-3 text-emerald-500" />
-                              <span>{item.estimatedPrice.toFixed(2)}</span>
-                            </span>
-                          )}
-
-                          {item.notes && (
-                            <span className="text-[11px] text-slate-400 line-clamp-1 italic">
-                              "{item.notes}"
-                            </span>
-                          )}
-                        </div>
-                      </div>
+                      )}
                     </div>
+                  )}
 
-                    {/* Right: Actions */}
-                    <div className="flex items-center gap-0.5 shrink-0">
-                      {/* Move Up Button */}
-                      <button
-                        type="button"
-                        onClick={async (e) => {
-                          e.stopPropagation();
-                          await reorderListItem(item.listId, item.id, 'up');
-                        }}
-                        className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition"
-                        title="Move Up"
-                      >
-                        <ArrowUp className="w-3.5 h-3.5" />
-                      </button>
-
-                      {/* Move Down Button */}
-                      <button
-                        type="button"
-                        onClick={async (e) => {
-                          e.stopPropagation();
-                          await reorderListItem(item.listId, item.id, 'down');
-                        }}
-                        className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition"
-                        title="Move Down"
-                      >
-                        <ArrowDown className="w-3.5 h-3.5" />
-                      </button>
-
-                      {/* Eliminate Button */}
-                      <button
-                        type="button"
-                        onClick={async (e) => {
-                          e.stopPropagation();
-                          await deleteListItem(
-                            item.listId,
-                            item.id,
-                            item.completed,
-                            item.title,
-                            {
-                              email: userProfile?.email || user?.email || '',
-                              displayName: userProfile?.displayName || user?.displayName || 'Me'
-                            }
-                          );
-                        }}
-                        className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/40 transition"
-                        title="Eliminate item"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-
-                      {/* Edit Details */}
-                      <button
-                        type="button"
-                        onClick={() => parentList && onSelectItem(item, parentList)}
-                        className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition"
-                        title="Edit Details"
-                      >
-                        <Edit3 className="w-3.5 h-3.5" />
-                      </button>
-
-                      {/* Google Calendar Sync */}
-                      <button
-                        type="button"
-                        onClick={(e) => handleSyncItemToGcal(item, e)}
-                        disabled={isSyncing}
-                        title={
-                          item.googleCalendarEventId
-                            ? 'Already synced to Google Calendar'
-                            : 'Sync to Google Calendar'
-                        }
-                        className={`p-1.5 rounded-lg border transition ${
-                          item.googleCalendarEventId
-                            ? 'bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-950/30 dark:border-emerald-800'
-                            : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:bg-slate-100 text-slate-500 dark:text-slate-400'
-                        }`}
-                      >
-                        {isSyncing ? (
-                          <RefreshCw className="w-3.5 h-3.5 animate-spin text-emerald-600" />
-                        ) : (
-                          <CalendarPlus className="w-3.5 h-3.5" />
-                        )}
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        {/* Right 1 Column: Clean List Switcher & Google Calendar Widget */}
-        <div className="space-y-5">
-          {/* Quick List Overview Card */}
-          <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 sm:p-5 border border-slate-200 dark:border-slate-800 shadow-2xs space-y-3">
-            <div className="flex items-center justify-between">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                Your Lists ({lists.length})
-              </h3>
-              <button
-                type="button"
-                onClick={onOpenCreateList}
-                className="text-xs font-bold hover:underline flex items-center gap-1"
-                style={{ color: activeAccent.primary }}
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>New List</span>
-              </button>
-            </div>
-
-            <div className="space-y-1.5 max-h-64 overflow-y-auto no-scrollbar">
-              {lists.map((l) => (
-                <div
-                  key={l.id}
-                  className="p-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-100 dark:border-slate-800/80 transition flex items-center justify-between group"
-                >
                   <button
                     type="button"
-                    onClick={() => onOpenList(l)}
-                    className="flex items-center gap-2.5 min-w-0 flex-1 text-left"
+                    onClick={(e) => handleDelete(e, item)}
+                    className="p-1.5 text-slate-300 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition shrink-0 opacity-80 group-hover:opacity-100"
+                    title="Delete item"
                   >
-                    <div className="w-7 h-7 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-xs shrink-0">
-                      {l.type === 'grocery' ? '🛒' : '📋'}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">
-                        {l.title}
-                      </div>
-                      <div className="text-[10px] text-slate-400">
-                        {l.itemCount || 0} items
-                      </div>
-                    </div>
+                    <Trash2 className="w-4 h-4" />
                   </button>
-
-                  <div className="flex items-center gap-1 opacity-80 group-hover:opacity-100 transition">
-                    <button
-                      type="button"
-                      onClick={() => onOpenAddToList ? onOpenAddToList(l.id) : onOpenList(l)}
-                      className="p-1 text-slate-400 hover:text-emerald-600 rounded-md hover:bg-slate-200/50 dark:hover:bg-slate-700 text-xs"
-                      title="Add item to this list"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Google Calendar Live Agenda & Connection Panel */}
-          <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 sm:p-5 border border-slate-200 dark:border-slate-800 shadow-2xs space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-lg bg-blue-50 dark:bg-blue-950/50 text-blue-600 flex items-center justify-center font-bold text-xs">
-                  🗓️
-                </div>
-                <div>
-                  <h3 className="text-xs font-bold text-slate-900 dark:text-white">
-                    Google Calendar
-                  </h3>
-                  <p className="text-[10px] text-slate-400">
-                    {isCalendarConnected ? 'Connected & synced' : 'Live schedule sync'}
-                  </p>
                 </div>
               </div>
-
-              {isCalendarConnected && (
-                <button
-                  type="button"
-                  onClick={refreshEvents}
-                  disabled={loadingEvents}
-                  className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition"
-                  title="Refresh calendar events"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${loadingEvents ? 'animate-spin text-blue-600' : ''}`} />
-                </button>
-              )}
-            </div>
-
-            {/* Connection Status Box */}
-            {!isCalendarConnected ? (
-              <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200/80 dark:border-slate-700/80 space-y-2.5 text-center">
-                <p className="text-xs text-slate-600 dark:text-slate-400">
-                  Connect your Google Calendar to view today's events and sync tasks with one click.
-                </p>
-                <button
-                  type="button"
-                  onClick={connectCalendar}
-                  disabled={isCalendarConnecting}
-                  className="w-full py-2 px-3 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-2xs transition flex items-center justify-center gap-1.5"
-                >
-                  {isCalendarConnecting ? (
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <Calendar className="w-3.5 h-3.5" />
-                  )}
-                  <span>Connect Google Calendar</span>
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-2.5">
-                {loadingEvents ? (
-                  <div className="space-y-1.5 py-2">
-                    <div className="h-8 bg-slate-100 dark:bg-slate-800 rounded-lg animate-pulse" />
-                    <div className="h-8 bg-slate-100 dark:bg-slate-800 rounded-lg animate-pulse" />
-                  </div>
-                ) : todayEvents.length === 0 ? (
-                  <div className="py-4 text-center text-xs text-slate-400 space-y-1">
-                    <p>No calendar events scheduled for today.</p>
-                  </div>
-                ) : (
-                  <div className="space-y-1.5 max-h-60 overflow-y-auto no-scrollbar">
-                    {todayEvents.map((evt) => {
-                      const startStr = evt.start.dateTime
-                        ? new Date(evt.start.dateTime).toLocaleTimeString([], {
-                            hour: '2-digit',
-                            minute: '2-digit'
-                          })
-                        : 'All Day';
-
-                      return (
-                        <div
-                          key={evt.id}
-                          className="p-2 bg-slate-50 dark:bg-slate-800/60 rounded-lg border border-slate-200/60 dark:border-slate-700/60 text-xs space-y-0.5"
-                        >
-                          <div className="flex items-center justify-between">
-                            <span className="font-semibold text-slate-800 dark:text-slate-200 truncate max-w-[160px]">
-                              {evt.summary}
-                            </span>
-                            <span className="text-[10px] font-semibold text-blue-600 dark:text-blue-400">
-                              {startStr}
-                            </span>
-                          </div>
-                          {evt.location && (
-                            <div className="text-[10px] text-slate-400 truncate flex items-center gap-1">
-                              <MapPin className="w-2.5 h-2.5" />
-                              <span>{evt.location}</span>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
+            );
+          })}
         </div>
-      </div>
+      )}
     </div>
   );
 };

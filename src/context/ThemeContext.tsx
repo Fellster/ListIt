@@ -47,12 +47,17 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const root = document.documentElement;
     root.style.fontFamily = `"${theme.fontFamily}", system-ui, sans-serif`;
 
-    // Apply CSS Custom Variables for dynamic primary colors
+    // Apply CSS Custom Variables for dynamic primary colors & accents
     root.style.setProperty('--brand-primary', activeAccent.primary);
     root.style.setProperty('--brand-primary-hover', activeAccent.primaryHover);
     root.style.setProperty('--brand-light', activeAccent.light);
     root.style.setProperty('--brand-text', activeAccent.text);
     root.style.setProperty('--brand-border', activeAccent.border);
+    root.style.setProperty('--accent-primary', activeAccent.primary);
+    root.style.setProperty('--accent-hover', activeAccent.primaryHover);
+    root.style.setProperty('--accent-light', activeAccent.light);
+    root.style.setProperty('--accent-text', activeAccent.text);
+    root.style.setProperty('--accent-border', activeAccent.border);
 
     // Apply Dark mode class if active
     if (theme.isDarkMode) {

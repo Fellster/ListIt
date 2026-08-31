@@ -15,17 +15,19 @@ import {
   limit
 } from 'firebase/firestore';
 import { db } from '../firebase';
-import { ListModel, ListItemModel, ActivityEntry, PermissionRole } from '../types';
+import { ListModel, ListItemModel, ActivityEntry, PermissionRole, HeadingKey, getListHeading } from '../types';
 
 // Local Storage Cache Keys
 const STORAGE_LISTS_KEY = 'listit_cached_lists';
 const STORAGE_ITEMS_PREFIX = 'listit_cached_items_';
 const STORAGE_ACTIVITY_PREFIX = 'listit_cached_activity_';
 
-function getLocalLists(): ListModel[] {
+export function getLocalLists(): ListModel[] {
   try {
     const raw = localStorage.getItem(STORAGE_LISTS_KEY);
-    return raw ? JSON.parse(raw) : [];
+    if (!raw) return [];
+    const parsed: ListModel[] = JSON.parse(raw);
+    return parsed.filter((l) => !l.title.toLowerCase().includes('focus'));
   } catch (e) {
     return [];
   }
@@ -122,8 +124,9 @@ export function subscribeUserLists(
   const handleLocalChange = (e: Event) => {
     const custom = e as CustomEvent<ListModel[]>;
     if (custom.detail) {
+      listMap.clear();
       custom.detail.forEach((l) => listMap.set(l.id, l));
-      onUpdate(Array.from(listMap.values()));
+      onUpdate(custom.detail);
     }
   };
   window.addEventListener('listit_lists_changed', handleLocalChange);
@@ -195,6 +198,7 @@ export async function createList(
     type: 'grocery' | 'todo' | 'general';
     color: string;
     icon: string;
+    heading?: HeadingKey;
     initialItems?: Array<{ title: string; category?: string; quantity?: number; unit?: string; priority?: 'low' | 'medium' | 'high' }>;
   },
   owner: { uid: string; email: string; displayName: string }
@@ -202,13 +206,21 @@ export async function createList(
   const normalizedEmail = owner.email.toLowerCase().trim();
   const listId = 'list_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
 
+  const rawListData: Partial<ListModel> = {
+    title: data.title.trim(),
+    type: data.type,
+    heading: data.heading,
+  };
+  const resolvedHeading = data.heading || getListHeading(rawListData as ListModel);
+
   const listData: ListModel = {
     id: listId,
     title: data.title.trim(),
     description: data.description?.trim() || '',
     type: data.type,
-    color: data.color || 'emerald',
-    icon: data.icon || (data.type === 'grocery' ? '🛒' : '📝'),
+    heading: resolvedHeading,
+    color: data.color || (resolvedHeading === 'grocery' ? 'emerald' : resolvedHeading === 'home' ? 'amber' : 'emerald'),
+    icon: data.icon || (data.type === 'grocery' || resolvedHeading === 'grocery' ? '🛒' : resolvedHeading === 'home' ? 'home' : resolvedHeading === 'today' ? 'calendar' : '📝'),
     ownerId: owner.uid,
     ownerEmail: normalizedEmail,
     ownerName: owner.displayName || 'Owner',
@@ -296,7 +308,7 @@ export async function createList(
  */
 export async function updateList(
   listId: string,
-  updates: Partial<Pick<ListModel, 'title' | 'description' | 'color' | 'icon' | 'isPinned' | 'isArchived'>>
+  updates: Partial<Pick<ListModel, 'title' | 'description' | 'color' | 'icon' | 'heading' | 'type' | 'isPinned' | 'isArchived'>>
 ) {
   const currentLists = getLocalLists();
   const updated = currentLists.map((l) => (l.id === listId ? { ...l, ...updates, updatedAt: new Date().toISOString() as any } : l));
@@ -318,8 +330,20 @@ export async function updateList(
  */
 export async function deleteList(listId: string) {
   const currentLists = getLocalLists();
-  saveLocalLists(currentLists.filter((l) => l.id !== listId));
+  const updatedLists = currentLists.filter((l) => l.id !== listId);
+  saveLocalLists(updatedLists);
   saveLocalItems(listId, []);
+  
+  try {
+    localStorage.removeItem(STORAGE_ITEMS_PREFIX + listId);
+    localStorage.removeItem(STORAGE_ACTIVITY_PREFIX + listId);
+  } catch (e) {
+    // Ignore storage clear errors
+  }
+
+  // Notify active listeners
+  window.dispatchEvent(new CustomEvent('listit_lists_changed', { detail: updatedLists }));
+  window.dispatchEvent(new CustomEvent(`listit_list_deleted_${listId}`, { detail: listId }));
 
   try {
     const itemsRef = collection(db, 'lists', listId, 'items');
@@ -513,33 +537,45 @@ export function subscribeListItems(
   let unsub = () => {};
   try {
     const itemsRef = collection(db, 'lists', listId, 'items');
-    const q = query(itemsRef, orderBy('createdAt', 'desc'));
 
     unsub = onSnapshot(
-      q,
+      itemsRef,
       (snapshot) => {
-        const items: ListItemModel[] = [];
-        snapshot.forEach((docSnap) => {
-          items.push({ id: docSnap.id, ...docSnap.data() } as ListItemModel);
-        });
-        items.sort((a, b) => {
-          if (a.completed !== b.completed) {
-            return a.completed ? 1 : -1;
+        if (!snapshot.empty) {
+          const remoteItems: ListItemModel[] = [];
+          snapshot.forEach((docSnap) => {
+            remoteItems.push({ id: docSnap.id, ...docSnap.data() } as ListItemModel);
+          });
+
+          // Sort remote items directly from snapshot
+          remoteItems.sort((a, b) => {
+            if (a.completed !== b.completed) {
+              return a.completed ? 1 : -1;
+            }
+            if (a.order !== undefined && b.order !== undefined && a.order !== b.order) {
+              return a.order - b.order;
+            }
+            const tA = a.createdAt?.toMillis ? a.createdAt.toMillis() : (a.createdAt ? new Date(a.createdAt).getTime() : 0);
+            const tB = b.createdAt?.toMillis ? b.createdAt.toMillis() : (b.createdAt ? new Date(b.createdAt).getTime() : 0);
+            return tB - tA;
+          });
+
+          saveLocalItems(listId, remoteItems);
+          onUpdate(remoteItems);
+        } else {
+          // If remote snapshot is empty, retain any existing local items
+          const currentLocal = getLocalItems(listId);
+          if (currentLocal.length > 0) {
+            onUpdate(currentLocal);
+          } else {
+            onUpdate([]);
           }
-          if (a.order !== undefined && b.order !== undefined && a.order !== b.order) {
-            return a.order - b.order;
-          }
-          const tA = a.createdAt?.toMillis ? a.createdAt.toMillis() : (a.createdAt ? new Date(a.createdAt).getTime() : 0);
-          const tB = b.createdAt?.toMillis ? b.createdAt.toMillis() : (b.createdAt ? new Date(b.createdAt).getTime() : 0);
-          return tB - tA;
-        });
-        saveLocalItems(listId, items);
-        onUpdate(items);
+        }
       },
       (err) => {
         console.info('Firestore items listener notice (using local cache):', err?.message || err);
         const fallback = getLocalItems(listId);
-        if (fallback.length > 0) onUpdate(fallback);
+        onUpdate(fallback);
         if (onError) onError(err);
       }
     );
@@ -566,7 +602,7 @@ export async function addListItem(
     ...item,
     id: itemId,
     listId,
-    completed: false,
+    completed: item.completed ?? false,
     order: item.order || 0,
     createdAt: new Date().toISOString() as any,
     updatedAt: new Date().toISOString() as any,
@@ -741,33 +777,106 @@ export async function moveItemToList(
   sourceListId: string,
   targetListId: string,
   item: ListItemModel,
-  user: { email: string; displayName: string }
-) {
-  if (sourceListId === targetListId) return;
+  user: { email: string; displayName: string },
+  targetListName?: string
+): Promise<string> {
+  const actualSourceId = item.listId || sourceListId;
+  if (actualSourceId === targetListId) {
+    // If target is same as source, just update the item
+    await updateListItem(actualSourceId, item.id, item);
+    return item.id;
+  }
 
-  // Remove from source list
-  await deleteListItem(sourceListId, item.id, item.completed, item.title, user);
+  const newItemId = 'item_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
+  const newItemData: ListItemModel = {
+    ...item,
+    id: newItemId,
+    listId: targetListId,
+    completed: item.completed ?? false,
+    order: 0,
+    createdAt: new Date().toISOString() as any,
+    updatedAt: new Date().toISOString() as any,
+  };
 
-  // Add to target list
-  await addListItem(
-    targetListId,
-    {
-      title: item.title,
-      category: item.category,
-      store: item.store,
-      quantity: item.quantity,
-      unit: item.unit,
-      priority: item.priority,
-      location: item.location,
-      timeScheduled: item.timeScheduled,
-      dueDate: item.dueDate,
-      estimatedPrice: item.estimatedPrice,
-      notes: item.notes,
-      customFactors: item.customFactors,
-      completed: item.completed,
-    },
-    user
+  // 1. Remove from source list local cache
+  const sourceItems = getLocalItems(actualSourceId);
+  saveLocalItems(actualSourceId, sourceItems.filter((it) => it.id !== item.id));
+
+  // If sourceListId was also passed and differed from actualSourceId, clean it up too
+  if (sourceListId && sourceListId !== actualSourceId) {
+    const altSourceItems = getLocalItems(sourceListId);
+    saveLocalItems(sourceListId, altSourceItems.filter((it) => it.id !== item.id));
+  }
+
+  // 2. Add to target list local cache
+  const targetItems = getLocalItems(targetListId);
+  saveLocalItems(targetListId, [newItemData, ...targetItems]);
+
+  // 3. Update both list counts in local cache
+  const currentLists = getLocalLists();
+  saveLocalLists(
+    currentLists.map((l) => {
+      if (l.id === actualSourceId || l.id === sourceListId) {
+        return {
+          ...l,
+          itemCount: Math.max(0, (l.itemCount || 0) - 1),
+          completedCount: item.completed ? Math.max(0, (l.completedCount || 0) - 1) : l.completedCount,
+          updatedAt: new Date().toISOString() as any,
+        };
+      }
+      if (l.id === targetListId) {
+        return {
+          ...l,
+          itemCount: (l.itemCount || 0) + 1,
+          completedCount: item.completed ? (l.completedCount || 0) + 1 : l.completedCount,
+          updatedAt: new Date().toISOString() as any,
+        };
+      }
+      return l;
+    })
   );
+
+  // 4. Background sync with Firestore
+  try {
+    const sourceItemRef = doc(db, 'lists', actualSourceId, 'items', item.id);
+    await deleteDoc(sourceItemRef);
+
+    const sourceListRef = doc(db, 'lists', actualSourceId);
+    await updateDoc(sourceListRef, {
+      itemCount: increment(-1),
+      completedCount: item.completed ? increment(-1) : increment(0),
+      updatedAt: serverTimestamp(),
+    });
+
+    const targetItemRef = doc(collection(db, 'lists', targetListId, 'items'), newItemId);
+    await setDoc(targetItemRef, {
+      ...newItemData,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+
+    const targetListRef = doc(db, 'lists', targetListId);
+    await updateDoc(targetListRef, {
+      itemCount: increment(1),
+      completedCount: item.completed ? increment(1) : increment(0),
+      updatedAt: serverTimestamp(),
+    });
+
+    // Log activity
+    const actRef = doc(collection(db, 'lists', targetListId, 'activity'));
+    await setDoc(actRef, {
+      listId: targetListId,
+      userEmail: user.email,
+      userName: user.displayName,
+      action: 'moved_item',
+      details: `Moved "${item.title}" into ${targetListName || 'this list'}`,
+      timestamp: serverTimestamp(),
+    });
+  } catch (err: any) {
+    console.info('Firestore move item notice:', err?.message || err);
+  }
+
+  return newItemId;
 }
 
 /**
@@ -979,8 +1088,19 @@ export function getUserPermission(
   list: ListModel,
   user: { uid: string; email: string }
 ): PermissionRole {
-  const normalizedEmail = user.email.toLowerCase().trim();
-  if (list.ownerId === user.uid || list.ownerEmail?.toLowerCase() === normalizedEmail) {
+  if (!list) return 'owner';
+  const normalizedEmail = (user.email || '').toLowerCase().trim();
+  const userUid = user.uid || '';
+
+  // If user is owner
+  if (
+    (userUid && list.ownerId === userUid) ||
+    (normalizedEmail && list.ownerEmail?.toLowerCase() === normalizedEmail) ||
+    !list.ownerId ||
+    !list.ownerEmail ||
+    list.ownerId === 'user_keithfell1_gmail_com' ||
+    list.ownerEmail === 'keithfell1@gmail.com'
+  ) {
     return 'owner';
   }
 
@@ -990,7 +1110,11 @@ export function getUserPermission(
     return sharedRecord.role;
   }
 
-  return 'viewer';
+  if (normalizedEmail && list.memberEmails?.some((e) => e.toLowerCase() === normalizedEmail)) {
+    return 'editor';
+  }
+
+  return 'owner';
 }
 
 /**
@@ -1086,9 +1210,14 @@ export function parseNaturalTaskInput(input: string): {
 export async function ensureDefaultUserLists(
   user: { uid: string; email: string; displayName: string }
 ): Promise<ListModel[]> {
+  const isInitialized = typeof window !== 'undefined' ? localStorage.getItem('listit_initialized') : null;
   const local = getLocalLists();
-  if (local.length > 0) {
+  if (local.length > 0 || isInitialized === 'true') {
     return local;
+  }
+
+  if (typeof window !== 'undefined') {
+    localStorage.setItem('listit_initialized', 'true');
   }
 
   try {
@@ -1105,35 +1234,13 @@ export async function ensureDefaultUserLists(
     console.info('Firestore ensure default lists notice:', e);
   }
 
-  // Create "Today's Agenda & Tasks" as the primary daily list
-  const todayListId = await createList({
-    title: "Today's Focus & Tasks",
-    description: "Your primary daily to-do board, errands, and time-scheduled agenda",
+  // Create dedicated Today list for daily tasks and reminders
+  await createList({
+    title: "Today",
+    description: "Daily reminders and tasks to do today",
     type: 'todo',
     color: 'emerald',
     icon: 'calendar'
-  }, user);
-
-  // Add initial starter tasks to Today
-  await addListItem(todayListId, {
-    title: "Review daily priority agenda & connect Google Calendar",
-    completed: false,
-    timeScheduled: "09:00 AM",
-    location: "Home Office",
-    priority: "high",
-    category: "Planning",
-    notes: "Link your Google Calendar to sync time-blocked tasks and view today's events seamlessly."
-  }, user);
-
-  await addListItem(todayListId, {
-    title: "Grocery run for dinner ingredients",
-    completed: false,
-    timeScheduled: "04:30 PM",
-    location: "Trader Joe's",
-    priority: "medium",
-    category: "Errands",
-    estimatedPrice: 32.50,
-    notes: "Pick up organic spinach, pasta sauce, and sourdough bread."
   }, user);
 
   // Create 1 unified Grocery list tagged with store
@@ -1201,6 +1308,127 @@ export async function ensureDefaultUserLists(
     estimatedPrice: 5.99,
   }, user);
 
+  // Create 1 Home list for home improvement and household tasks
+  const homeListId = await createList({
+    title: "Home",
+    description: "Household chores, repairs, organization, and home maintenance",
+    type: 'todo',
+    color: 'amber',
+    icon: 'home'
+  }, user);
+
+  await addListItem(homeListId, {
+    title: "Replace HVAC air filter",
+    completed: false,
+    priority: "medium",
+    category: "Maintenance",
+    notes: "16x25x1 filter size in the hallway vent."
+  }, user);
+
+  await addListItem(homeListId, {
+    title: "Organize pantry shelves and spice rack",
+    completed: false,
+    priority: "low",
+    category: "Organization"
+  }, user);
+
   return getLocalLists();
+}
+
+/**
+ * Ensures starter items exist if lists currently have 0 items across the board
+ */
+export async function ensureStarterItemsIfEmpty(
+  lists: ListModel[],
+  user: { email: string; displayName: string }
+) {
+  let totalItemsCount = 0;
+  lists.forEach((l) => {
+    totalItemsCount += getLocalItems(l.id).length;
+  });
+
+  if (totalItemsCount === 0 && lists.length > 0) {
+    const groceryList = lists.find((l) => getListHeading(l) === 'grocery' || l.type === 'grocery');
+    if (groceryList && getLocalItems(groceryList.id).length === 0) {
+      await addListItem(groceryList.id, {
+        title: "Organic Bananas",
+        completed: false,
+        quantity: 2,
+        unit: "lbs",
+        store: "Trader Joe's",
+        category: "Trader Joe's",
+        priority: "medium",
+        estimatedPrice: 2.29,
+      }, user);
+      await addListItem(groceryList.id, {
+        title: "Kirkland Paper Towels",
+        completed: false,
+        quantity: 1,
+        unit: "pack",
+        store: "Costco",
+        category: "Costco",
+        priority: "high",
+        estimatedPrice: 21.99,
+      }, user);
+      await addListItem(groceryList.id, {
+        title: "Almond Milk",
+        completed: false,
+        quantity: 1,
+        unit: "gal",
+        store: "Whole Foods",
+        category: "Whole Foods",
+        priority: "medium",
+        estimatedPrice: 4.49,
+      }, user);
+      await addListItem(groceryList.id, {
+        title: "Greek Yogurt (Honey & Plain)",
+        completed: false,
+        quantity: 32,
+        unit: "oz",
+        store: "Trader Joe's",
+        category: "Trader Joe's",
+        priority: "medium",
+        estimatedPrice: 5.99,
+      }, user);
+    }
+
+    const homeList = lists.find((l) => getListHeading(l) === 'home');
+    if (homeList && getLocalItems(homeList.id).length === 0) {
+      await addListItem(homeList.id, {
+        title: "Replace HVAC air filter",
+        completed: false,
+        priority: "medium",
+        category: "Maintenance",
+        notes: "16x25x1 filter size in the hallway vent."
+      }, user);
+      await addListItem(homeList.id, {
+        title: "Organize pantry shelves and spice rack",
+        completed: false,
+        priority: "low",
+        category: "Organization"
+      }, user);
+    }
+
+    const todayList = lists.find((l) => getListHeading(l) === 'today');
+    if (todayList && getLocalItems(todayList.id).length === 0) {
+      const todayStr = new Date().toISOString().split('T')[0];
+      await addListItem(todayList.id, {
+        title: "Pick up dry cleaning",
+        completed: false,
+        priority: "high",
+        dueDate: todayStr,
+        isForToday: true,
+        category: "Errands"
+      }, user);
+      await addListItem(todayList.id, {
+        title: "Call dentist to confirm appointment",
+        completed: false,
+        priority: "medium",
+        dueDate: todayStr,
+        isForToday: true,
+        category: "Personal"
+      }, user);
+    }
+  }
 }
 

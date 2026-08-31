@@ -1,36 +1,34 @@
-import React, { useState, useEffect } from 'react';
-import { ListItemModel, ListModel, GROCERY_STORES, PriorityLevel, SharedMember, CustomFactor } from '../types';
-import { updateListItem, deleteListItem } from '../services/listService';
+import React, { useState, useEffect, useMemo } from 'react';
+import { ListItemModel, ListModel, GROCERY_STORES, getListHeading } from '../types';
+import { 
+  updateListItem, 
+  deleteListItem, 
+  moveItemToList, 
+  createList,
+  subscribeUserLists,
+  getLocalLists 
+} from '../services/listService';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
-import { useCalendar } from '../context/CalendarContext';
 import { useSpeechRecognition } from '../utils/useSpeechRecognition';
-import { parseVoiceDictation, ParsedVoiceItem } from '../utils/voiceDictationParser';
 import { 
   X, 
   Trash2, 
   Save, 
-  Tag, 
+  MapPin, 
   Calendar, 
-  User, 
-  Hash, 
-  FileText, 
-  Clock,
+  Clock, 
+  Mic, 
   AlertCircle,
-  MapPin,
-  DollarSign,
-  CalendarPlus,
   ExternalLink,
-  Plus,
-  RefreshCw,
-  Mic,
-  MicOff,
-  Sparkles,
+  ArrowRightLeft,
+  CalendarCheck,
+  ShoppingCart,
+  Home,
+  FolderOpen,
+  ArrowRight,
   Check,
-  RotateCcw,
-  Volume2,
-  Wand2,
-  Store
+  Sparkles
 } from 'lucide-react';
 
 interface ItemDetailsModalProps {
@@ -39,218 +37,363 @@ interface ItemDetailsModalProps {
   isOpen: boolean;
   onClose: () => void;
   canEdit: boolean;
+  lists?: ListModel[];
 }
 
-export const ItemDetailsModal: React.FC<ItemDetailsModalProps> = ({
+interface ItemDetailsModalContentProps {
+  list: ListModel;
+  item: ListItemModel;
+  onClose: () => void;
+  canEdit: boolean;
+  lists?: ListModel[];
+}
+
+type DestinationHeading = 'today' | 'grocery' | 'home' | 'other';
+
+const ItemDetailsModalContent: React.FC<ItemDetailsModalContentProps> = ({
   list,
   item,
-  isOpen,
   onClose,
   canEdit,
+  lists: providedLists,
 }) => {
   const { userProfile, user } = useAuth();
   const { activeAccent } = useTheme();
-  const { isConnected: isGcalConnected, syncTaskToCalendar } = useCalendar();
 
-  if (!isOpen || !item) return null;
-
-  const [title, setTitle] = useState(item.title);
-  const [quantity, setQuantity] = useState(item.quantity || 1);
-  const [unit, setUnit] = useState(item.unit || 'pcs');
-  const [store, setStore] = useState(item.store || item.category || (list.type === 'grocery' ? item.location : '') || "Trader Joe's");
-  const [category, setCategory] = useState(item.category || item.store || 'Trader Joe\'s');
-  const [priority, setPriority] = useState<PriorityLevel>(item.priority || 'medium');
-  const [dueDate, setDueDate] = useState(item.dueDate || '');
-  const [location, setLocation] = useState(item.location || '');
-  const [timeScheduled, setTimeScheduled] = useState(item.timeScheduled || '');
-  const [durationMinutes, setDurationMinutes] = useState(item.durationMinutes ? String(item.durationMinutes) : '30');
-  const [estimatedPrice, setEstimatedPrice] = useState(item.estimatedPrice !== undefined ? String(item.estimatedPrice) : '');
-  const [notes, setNotes] = useState(item.notes || '');
-  const [assignedToEmail, setAssignedToEmail] = useState(item.assignedToEmail || '');
-  const [customFactors, setCustomFactors] = useState<CustomFactor[]>(item.customFactors || []);
-  const [newFactorKey, setNewFactorKey] = useState('');
-  const [newFactorVal, setNewFactorVal] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [syncingGcal, setSyncingGcal] = useState(false);
-  const [gcalSynced, setGcalSynced] = useState(!!item.googleCalendarEventId);
-
-  // Voice Recording & Dictation States
-  const [showVoicePanel, setShowVoicePanel] = useState(false);
-  const [voiceTarget, setVoiceTarget] = useState<'smart' | 'title' | 'notes' | 'location' | 'store'>('smart');
-  const [lastAppliedVoice, setLastAppliedVoice] = useState(false);
-  const [parsedVoiceData, setParsedVoiceData] = useState<ParsedVoiceItem | null>(null);
-
-  const {
-    isSupported: isVoiceSupported,
-    isListening,
-    transcript,
-    interimTranscript,
-    error: voiceError,
-    startListening,
-    stopListening,
-    resetTranscript,
-  } = useSpeechRecognition((finalText) => {
-    // When final speech result comes in, parse or update fields
-    if (voiceTarget === 'smart') {
-      const parsed = parseVoiceDictation(finalText, list.type);
-      setParsedVoiceData(parsed);
-    } else if (voiceTarget === 'title') {
-      setTitle(finalText);
-    } else if (voiceTarget === 'store') {
-      setStore(finalText);
-      setCategory(finalText);
-    } else if (voiceTarget === 'location') {
-      setLocation(finalText);
-    } else if (voiceTarget === 'notes') {
-      setNotes((prev) => (prev ? `${prev}\n${finalText}` : finalText));
-    }
+  // All available lists
+  const [allLists, setAllLists] = useState<ListModel[]>(() => {
+    if (providedLists && providedLists.length > 0) return providedLists;
+    return getLocalLists();
   });
 
-  // Keep smart parsed data up-to-date with live transcript
   useEffect(() => {
-    const activeText = (transcript + ' ' + interimTranscript).trim();
-    if (activeText && voiceTarget === 'smart') {
-      const parsed = parseVoiceDictation(activeText, list.type);
-      setParsedVoiceData(parsed);
+    if (providedLists && providedLists.length > 0) {
+      setAllLists(providedLists);
+      return;
     }
-  }, [transcript, interimTranscript, voiceTarget, list.type]);
+    const currentUserId = user?.uid || userProfile?.uid || 'user_keithfell1_gmail_com';
+    const currentUserEmail = (userProfile?.email || user?.email || 'keithfell1@gmail.com').toLowerCase();
+    const unsubscribe = subscribeUserLists(currentUserId, currentUserEmail, (fetched) => {
+      setAllLists(fetched);
+    });
+    return () => unsubscribe();
+  }, [providedLists, user, userProfile]);
 
-  const handleToggleVoicePanel = () => {
-    if (isListening) {
-      stopListening();
+  // 1. What
+  const [what, setWhat] = useState(item.title || '');
+  
+  // 2. Where
+  const [where, setWhere] = useState(
+    item.location || item.store || item.category || ''
+  );
+
+  // 3. When
+  const [whenDate, setWhenDate] = useState(item.dueDate || '');
+  const [whenTime, setWhenTime] = useState(item.timeScheduled || '');
+
+  // Move Task To Destination Heading & Sub-list
+  const currentHeading = getListHeading(list);
+  const [targetHeading, setTargetHeading] = useState<DestinationHeading>(currentHeading);
+
+  // Lists categorized by heading
+  const todayLists = useMemo(() => allLists.filter((l) => getListHeading(l) === 'today'), [allLists]);
+  const groceryLists = useMemo(() => allLists.filter((l) => getListHeading(l) === 'grocery'), [allLists]);
+  const homeLists = useMemo(() => allLists.filter((l) => getListHeading(l) === 'home'), [allLists]);
+  const otherLists = useMemo(() => allLists.filter((l) => getListHeading(l) === 'other'), [allLists]);
+
+  const [selectedTodayListId, setSelectedTodayListId] = useState<string>(() => {
+    if (currentHeading === 'today') return list.id;
+    return todayLists[0]?.id || '';
+  });
+
+  const [selectedGroceryListId, setSelectedGroceryListId] = useState<string>(() => {
+    if (currentHeading === 'grocery') return list.id;
+    return groceryLists[0]?.id || '';
+  });
+
+  const [selectedHomeListId, setSelectedHomeListId] = useState<string>(() => {
+    if (currentHeading === 'home') return list.id;
+    return homeLists[0]?.id || '';
+  });
+
+  const [selectedOtherListId, setSelectedOtherListId] = useState<string>(() => {
+    if (currentHeading === 'other') return list.id;
+    return otherLists[0]?.id || '';
+  });
+
+  // Keep selections synced
+  useEffect(() => {
+    if (todayLists.length > 0 && !todayLists.some((l) => l.id === selectedTodayListId)) {
+      setSelectedTodayListId(todayLists[0].id);
     }
-    setShowVoicePanel((prev) => !prev);
-    resetTranscript();
-    setParsedVoiceData(null);
-  };
+    if (groceryLists.length > 0 && !groceryLists.some((l) => l.id === selectedGroceryListId)) {
+      setSelectedGroceryListId(groceryLists[0].id);
+    }
+    if (homeLists.length > 0 && !homeLists.some((l) => l.id === selectedHomeListId)) {
+      setSelectedHomeListId(homeLists[0].id);
+    }
+    if (otherLists.length > 0 && !otherLists.some((l) => l.id === selectedOtherListId)) {
+      setSelectedOtherListId(otherLists[0].id);
+    }
+  }, [todayLists, groceryLists, homeLists, otherLists, selectedTodayListId, selectedGroceryListId, selectedHomeListId, selectedOtherListId]);
 
-  const handleStartVoice = (target: 'smart' | 'title' | 'notes' | 'location' | 'store') => {
+  const [loading, setLoading] = useState(false);
+  const [moveStatus, setMoveStatus] = useState<string | null>(null);
+  const [activeVoiceField, setActiveVoiceField] = useState<'what' | 'where' | 'whenTime' | null>(null);
+
+  const {
+    isListening,
+    startListening,
+    stopListening,
+  } = useSpeechRecognition((finalText) => {
+    if (activeVoiceField === 'what') {
+      setWhat(finalText);
+    } else if (activeVoiceField === 'where') {
+      setWhere(finalText);
+    } else if (activeVoiceField === 'whenTime') {
+      setWhenTime(finalText);
+    }
+    setActiveVoiceField(null);
+  });
+
+  const handleStartVoice = (field: 'what' | 'where' | 'whenTime') => {
     if (!canEdit) return;
-    setVoiceTarget(target);
-    setShowVoicePanel(true);
-    resetTranscript();
-    setParsedVoiceData(null);
-    setLastAppliedVoice(false);
-    startListening({ continuous: false });
-  };
-
-  const handleApplySmartVoice = () => {
-    if (!parsedVoiceData) return;
-    if (parsedVoiceData.title) setTitle(parsedVoiceData.title);
-    if (parsedVoiceData.category) {
-      setCategory(parsedVoiceData.category);
-      setStore(parsedVoiceData.category);
+    if (isListening && activeVoiceField === field) {
+      stopListening();
+      setActiveVoiceField(null);
+    } else {
+      setActiveVoiceField(field);
+      startListening({ continuous: false });
     }
-    if (parsedVoiceData.quantity) setQuantity(parsedVoiceData.quantity);
-    if (parsedVoiceData.unit) setUnit(parsedVoiceData.unit);
-    if (parsedVoiceData.location) setLocation(parsedVoiceData.location);
-    if (parsedVoiceData.timeScheduled) setTimeScheduled(parsedVoiceData.timeScheduled);
-    if (parsedVoiceData.dueDate) setDueDate(parsedVoiceData.dueDate);
-    if (parsedVoiceData.estimatedPrice !== undefined) setEstimatedPrice(String(parsedVoiceData.estimatedPrice));
-    if (parsedVoiceData.priority) setPriority(parsedVoiceData.priority);
-    if (parsedVoiceData.notes) {
-      setNotes((prev) => (prev ? `${prev}\n${parsedVoiceData.notes}` : parsedVoiceData.notes!));
+  };
+
+  // Helper to resolve destination targetListId and targetListName
+  const resolveTargetList = async (
+    heading: DestinationHeading,
+    chosenSubListId?: string
+  ): Promise<{ targetListId: string; targetListName: string }> => {
+    const userMeta = {
+      uid: user?.uid || userProfile?.uid || 'user_keithfell1_gmail_com',
+      email: (userProfile?.email || user?.email || 'keithfell1@gmail.com').toLowerCase(),
+      displayName: userProfile?.displayName || user?.displayName || 'Keith Fell',
+    };
+
+    if (heading === 'today') {
+      const explicitId = chosenSubListId || selectedTodayListId;
+      const matched = todayLists.find((l) => l.id === explicitId);
+      if (matched) return { targetListId: matched.id, targetListName: matched.title };
+      if (todayLists.length > 0) return { targetListId: todayLists[0].id, targetListName: todayLists[0].title };
+      
+      const newId = await createList({
+        title: "Today",
+        description: "Daily reminders and tasks to do today",
+        type: 'todo',
+        heading: 'today',
+        color: 'emerald',
+        icon: 'calendar'
+      }, userMeta);
+      return { targetListId: newId, targetListName: "Today" };
     }
-    setLastAppliedVoice(true);
-    setTimeout(() => setLastAppliedVoice(false), 2000);
+
+    if (heading === 'grocery') {
+      const explicitId = chosenSubListId || selectedGroceryListId;
+      const matched = groceryLists.find((l) => l.id === explicitId);
+      if (matched) return { targetListId: matched.id, targetListName: matched.title };
+      if (groceryLists.length > 0) return { targetListId: groceryLists[0].id, targetListName: groceryLists[0].title };
+
+      const newId = await createList({
+        title: "Grocery List",
+        description: "Shopping list tagged by store",
+        type: 'grocery',
+        heading: 'grocery',
+        color: 'emerald',
+        icon: 'shopping-cart'
+      }, userMeta);
+      return { targetListId: newId, targetListName: "Grocery List" };
+    }
+
+    if (heading === 'home') {
+      const explicitId = chosenSubListId || selectedHomeListId;
+      const matched = homeLists.find((l) => l.id === explicitId);
+      if (matched) return { targetListId: matched.id, targetListName: matched.title };
+      if (homeLists.length > 0) return { targetListId: homeLists[0].id, targetListName: homeLists[0].title };
+
+      const newId = await createList({
+        title: "Home",
+        description: "Household chores, repairs, organization, and home maintenance",
+        type: 'todo',
+        heading: 'home',
+        color: 'amber',
+        icon: 'home'
+      }, userMeta);
+      return { targetListId: newId, targetListName: "Home" };
+    }
+
+    // Heading is 'other'
+    const explicitId = chosenSubListId || selectedOtherListId;
+    const matched = otherLists.find((l) => l.id === explicitId);
+    if (matched) {
+      return { targetListId: matched.id, targetListName: matched.title };
+    }
+    if (otherLists.length > 0) {
+      return { targetListId: otherLists[0].id, targetListName: otherLists[0].title };
+    }
+
+    return { targetListId: list.id, targetListName: list.title };
   };
 
-  const handleAddFactor = () => {
-    if (!newFactorKey.trim() || !newFactorVal.trim()) return;
-    setCustomFactors([
-      ...customFactors,
-      { id: Date.now().toString(), label: newFactorKey.trim(), value: newFactorVal.trim() }
-    ]);
-    setNewFactorKey('');
-    setNewFactorVal('');
-  };
-
-  const handleRemoveFactor = (id: string) => {
-    setCustomFactors(customFactors.filter((f) => f.id !== id));
-  };
-
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // Helper to execute move or save
+  const executeMoveOrSave = async (heading: DestinationHeading, chosenSubListId?: string) => {
     if (!canEdit) return;
     if (isListening) stopListening();
-    setLoading(true);
+    if (!what.trim()) return;
+
+    // Immediately close the task editor modal without waiting for background sync
+    onClose();
 
     try {
-      const finalStore = store.trim() || category.trim() || "Trader Joe's";
-      await updateListItem(list.id, item.id, {
-        title: title.trim(),
-        quantity: Number(quantity) || 1,
-        unit: unit.trim() || 'pcs',
-        category: finalStore,
-        store: finalStore,
-        priority,
-        dueDate: dueDate || undefined,
-        location: location.trim() || (list.type === 'grocery' ? finalStore : undefined),
-        timeScheduled: timeScheduled.trim() || undefined,
-        durationMinutes: durationMinutes ? parseInt(durationMinutes, 10) : undefined,
-        estimatedPrice: estimatedPrice ? parseFloat(estimatedPrice) : undefined,
-        notes: notes.trim() || undefined,
-        customFactors: customFactors.length > 0 ? customFactors : undefined,
-        assignedToEmail: assignedToEmail || undefined,
-      });
-      onClose();
-    } catch (err) {
-      console.error('Error updating item:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
+      const userMeta = {
+        uid: user?.uid || userProfile?.uid || 'user_keithfell1_gmail_com',
+        email: (userProfile?.email || user?.email || 'keithfell1@gmail.com').toLowerCase(),
+        displayName: userProfile?.displayName || user?.displayName || 'Keith Fell',
+      };
 
-  const handleManualGcalSync = async () => {
-    setSyncingGcal(true);
-    try {
-      const res = await syncTaskToCalendar({
-        ...item,
-        title,
-        location,
-        timeScheduled,
-        durationMinutes: durationMinutes ? parseInt(durationMinutes, 10) : undefined,
-        notes,
-        customFactors,
-        dueDate
-      });
-      if (res) {
-        setGcalSynced(true);
-        await updateListItem(list.id, item.id, {
-          googleCalendarEventId: res.id,
-          googleCalendarEventLink: res.htmlLink
-        });
+      const todayStr = new Date().toISOString().split('T')[0];
+      const isMovingToToday = heading === 'today';
+      const cleanWhere = where.trim() || undefined;
+
+      // When moving out of the today heading to another heading (e.g. Grocery, Home, Other):
+      // - isForToday becomes false
+      // - dueDate is cleared if it was only set to today's date (or if moving out of Today list without a deliberate different date)
+      let finalDueDate: string | undefined = whenDate ? whenDate.trim() : undefined;
+      if (isMovingToToday) {
+        finalDueDate = whenDate ? whenDate.trim() : todayStr;
+      } else {
+        // Moving away from Today: do not retain today's date automatically
+        if (whenDate === todayStr || (!whenDate && (item.isForToday || currentHeading === 'today'))) {
+          finalDueDate = undefined;
+        }
+      }
+
+      const updatedFields: Partial<ListItemModel> = {
+        title: what.trim(),
+        location: cleanWhere,
+        store: cleanWhere,
+        category: cleanWhere,
+        dueDate: finalDueDate,
+        timeScheduled: isMovingToToday ? (whenTime.trim() || undefined) : undefined,
+        isForToday: isMovingToToday,
+      };
+
+      const { targetListId, targetListName } = await resolveTargetList(heading, chosenSubListId);
+      const actualSourceListId = item.listId || list.id;
+
+      if (targetListId && targetListId !== actualSourceListId) {
+        await moveItemToList(
+          actualSourceListId,
+          targetListId,
+          {
+            ...item,
+            ...updatedFields,
+          },
+          userMeta,
+          targetListName
+        );
+      } else {
+        await updateListItem(actualSourceListId, item.id, updatedFields);
       }
     } catch (err) {
-      console.error('GCal manual sync error:', err);
-    } finally {
-      setSyncingGcal(false);
+      console.error('Error saving or moving item:', err);
     }
   };
 
-  const handleDelete = async () => {
+  const handleFormSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const targetSubListId =
+      targetHeading === 'today' ? selectedTodayListId :
+      targetHeading === 'grocery' ? selectedGroceryListId :
+      targetHeading === 'home' ? selectedHomeListId : selectedOtherListId;
+    await executeMoveOrSave(targetHeading, targetSubListId);
+  };
+
+  const handleDelete = () => {
     if (!canEdit) return;
     if (isListening) stopListening();
-    if (confirm(`Delete "${item.title}" from list?`)) {
-      await deleteListItem(list.id, item.id, item.completed, item.title, {
-        email: (userProfile?.email || user?.email || '').toLowerCase(),
-        displayName: userProfile?.displayName || user?.displayName || 'User',
-      });
+    if (confirm(`Delete "${item.title}"?`)) {
       onClose();
+      deleteListItem(item.listId || list.id, item.id, item.completed, item.title, {
+        email: (userProfile?.email || user?.email || 'keithfell1@gmail.com').toLowerCase(),
+        displayName: userProfile?.displayName || user?.displayName || 'Keith Fell',
+      }).catch((err) => console.error('Error deleting item:', err));
     }
   };
 
-  const sharedMembers = Object.values(list.sharedWith || {}) as SharedMember[];
-  const fullSpokenText = (transcript + (interimTranscript ? ' ' + interimTranscript : '')).trim();
+  // Get current target label for clear UX
+  const getTargetDisplayName = () => {
+    if (targetHeading === 'today') {
+      const found = todayLists.find((l) => l.id === selectedTodayListId);
+      return found ? found.title : 'Today';
+    }
+    if (targetHeading === 'grocery') {
+      const found = groceryLists.find((l) => l.id === selectedGroceryListId);
+      return found ? found.title : 'Grocery';
+    }
+    if (targetHeading === 'home') {
+      const found = homeLists.find((l) => l.id === selectedHomeListId);
+      return found ? found.title : 'Home';
+    }
+    if (targetHeading === 'other') {
+      const found = otherLists.find((l) => l.id === selectedOtherListId);
+      return found ? found.title : 'Other List';
+    }
+    return list.title;
+  };
+
+  const isDifferentFromCurrent = () => {
+    const actualSourceListId = item.listId || list.id;
+    if (targetHeading === 'today') {
+      return getListHeading(list) !== 'today' || (selectedTodayListId ? selectedTodayListId !== actualSourceListId : false);
+    }
+    if (targetHeading === 'grocery') {
+      return getListHeading(list) !== 'grocery' || (selectedGroceryListId ? selectedGroceryListId !== actualSourceListId : false);
+    }
+    if (targetHeading === 'home') {
+      return getListHeading(list) !== 'home' || (selectedHomeListId ? selectedHomeListId !== actualSourceListId : false);
+    }
+    if (targetHeading === 'other') return selectedOtherListId !== actualSourceListId;
+    return false;
+  };
+
+  // Handle direct click on destination heading
+  const handleDestinationClick = async (dest: DestinationHeading) => {
+    setTargetHeading(dest);
+    const targetSubListId =
+      dest === 'today' ? selectedTodayListId :
+      dest === 'grocery' ? selectedGroceryListId :
+      dest === 'home' ? selectedHomeListId : selectedOtherListId;
+
+    if (dest !== currentHeading) {
+      if (
+        (dest === 'today' && todayLists.length <= 1) ||
+        (dest === 'grocery' && groceryLists.length <= 1) ||
+        (dest === 'home' && homeLists.length <= 1)
+      ) {
+        await executeMoveOrSave(dest, targetSubListId);
+      }
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-      <div className="relative w-full max-w-xl bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden animate-in fade-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
+      <div className="relative w-full max-w-lg bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden animate-in fade-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
         {/* Header */}
         <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/70 dark:bg-slate-800/50">
           <div className="flex items-center gap-2">
-            <span className="text-xs font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-              {list.type === 'grocery' ? '🛒 Grocery Item Details' : '📋 Task & Factor Editor'}
+            <span className="text-sm font-extrabold text-slate-900 dark:text-white">
+              Edit Task
+            </span>
+            <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 bg-slate-200/70 dark:bg-slate-700/70 px-2 py-0.5 rounded-full">
+              in {list.title}
             </span>
             {!canEdit && (
               <span className="text-[10px] bg-sky-100 text-sky-700 px-2 py-0.5 rounded-full font-medium">
@@ -258,38 +401,21 @@ export const ItemDetailsModal: React.FC<ItemDetailsModalProps> = ({
               </span>
             )}
           </div>
-          
-          <div className="flex items-center gap-2">
-            {canEdit && (
-              <button
-                type="button"
-                onClick={handleToggleVoicePanel}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
-                  showVoicePanel || isListening
-                    ? 'bg-rose-500 text-white shadow-sm ring-2 ring-rose-300 dark:ring-rose-900 animate-pulse'
-                    : 'bg-slate-200/80 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-300 dark:hover:bg-slate-700'
-                }`}
-                title="Voice dictation & speech recognition"
-              >
-                <Mic className="w-3.5 h-3.5" />
-                <span>{isListening ? 'Listening...' : 'Voice Dictate'}</span>
-              </button>
-            )}
-            
-            <button
-              onClick={() => {
-                if (isListening) stopListening();
-                onClose();
-              }}
-              className="w-8 h-8 rounded-xl flex items-center justify-center text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-slate-700 transition"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              if (isListening) stopListening();
+              onClose();
+            }}
+            className="w-8 h-8 rounded-xl flex items-center justify-center text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-slate-700 transition"
+          >
+            <X className="w-5 h-5" />
+          </button>
         </div>
 
         {/* Body */}
-        <form onSubmit={handleSave} className="p-6 overflow-y-auto space-y-5 flex-1">
+        <form onSubmit={handleFormSubmit} className="p-6 space-y-4 overflow-y-auto flex-1">
           {!canEdit && (
             <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 flex items-start gap-2">
               <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
@@ -297,732 +423,501 @@ export const ItemDetailsModal: React.FC<ItemDetailsModalProps> = ({
             </div>
           )}
 
-          {/* Voice Dictation Interactive Panel */}
-          {showVoicePanel && canEdit && (
-            <div className="p-4 bg-gradient-to-br from-rose-50/80 to-amber-50/50 dark:from-rose-950/20 dark:to-slate-800/60 rounded-2xl border border-rose-200 dark:border-rose-900/40 shadow-xs space-y-3.5 animate-in fade-in slide-in-from-top-2 duration-200">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className={`w-7 h-7 rounded-xl flex items-center justify-center ${isListening ? 'bg-rose-500 text-white animate-bounce' : 'bg-rose-100 dark:bg-rose-900/50 text-rose-600 dark:text-rose-400'}`}>
-                    <Mic className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <h4 className="text-xs font-extrabold uppercase tracking-wider text-slate-800 dark:text-slate-200">
-                      Voice Dictation Studio
-                    </h4>
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                      Speak clearly into your microphone to dictate tasks or groceries
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (isListening) {
-                        stopListening();
-                      } else {
-                        startListening({ continuous: false });
-                      }
-                    }}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-xs ${
-                      isListening
-                        ? 'bg-rose-600 hover:bg-rose-700 text-white'
-                        : 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                    }`}
-                  >
-                    {isListening ? (
-                      <>
-                        <MicOff className="w-3.5 h-3.5" />
-                        <span>Stop Mic</span>
-                      </>
-                    ) : (
-                      <>
-                        <Mic className="w-3.5 h-3.5" />
-                        <span>Start Recording</span>
-                      </>
-                    )}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      resetTranscript();
-                      setParsedVoiceData(null);
-                    }}
-                    className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-slate-800 rounded-lg transition"
-                    title="Reset transcript"
-                  >
-                    <RotateCcw className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-
-              {/* Dictation Mode Selector */}
-              <div className="flex flex-wrap gap-1.5 p-1 bg-white/70 dark:bg-slate-900/60 rounded-xl border border-slate-200/60 dark:border-slate-700/60 text-xs">
-                <button
-                  type="button"
-                  onClick={() => setVoiceTarget('smart')}
-                  className={`px-3 py-1 rounded-lg font-bold transition flex items-center gap-1 ${
-                    voiceTarget === 'smart'
-                      ? 'bg-rose-500 text-white shadow-xs'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                  }`}
+          {/* 1. What */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                <span 
+                  className="w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-extrabold"
+                  style={{
+                    backgroundColor: activeAccent.light,
+                    color: activeAccent.text
+                  }}
                 >
-                  <Wand2 className="w-3 h-3" />
-                  <span>Smart Auto-Fill</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setVoiceTarget('title')}
-                  className={`px-2.5 py-1 rounded-lg font-medium transition ${
-                    voiceTarget === 'title'
-                      ? 'bg-rose-500 text-white shadow-xs'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                  }`}
-                >
-                  Title Only
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setVoiceTarget('store')}
-                  className={`px-2.5 py-1 rounded-lg font-medium transition ${
-                    voiceTarget === 'store'
-                      ? 'bg-rose-500 text-white shadow-xs'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                  }`}
-                >
-                  Store / Location
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setVoiceTarget('location')}
-                  className={`px-2.5 py-1 rounded-lg font-medium transition ${
-                    voiceTarget === 'location'
-                      ? 'bg-rose-500 text-white shadow-xs'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                  }`}
-                >
-                  Location Only
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setVoiceTarget('notes')}
-                  className={`px-2.5 py-1 rounded-lg font-medium transition ${
-                    voiceTarget === 'notes'
-                      ? 'bg-rose-500 text-white shadow-xs'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                  }`}
-                >
-                  Notes Only
-                </button>
-              </div>
-
-              {/* Audio Wave / Recording Visualizer */}
-              {isListening && (
-                <div className="flex items-center justify-center gap-1.5 py-1.5 bg-rose-100/50 dark:bg-rose-950/30 rounded-xl">
-                  <span className="text-[11px] font-bold text-rose-700 dark:text-rose-300 flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping" />
-                    Recording live speech...
-                  </span>
-                  <div className="flex items-end gap-1 h-4 px-2">
-                    <span className="w-1 bg-rose-500 rounded-full animate-[pulse_0.4s_ease-in-out_infinite] h-2" />
-                    <span className="w-1 bg-rose-500 rounded-full animate-[pulse_0.6s_ease-in-out_infinite] h-4" />
-                    <span className="w-1 bg-rose-500 rounded-full animate-[pulse_0.3s_ease-in-out_infinite] h-3" />
-                    <span className="w-1 bg-rose-500 rounded-full animate-[pulse_0.5s_ease-in-out_infinite] h-4" />
-                    <span className="w-1 bg-rose-500 rounded-full animate-[pulse_0.4s_ease-in-out_infinite] h-2" />
-                  </div>
-                </div>
-              )}
-
-              {/* Spoken Text Transcript Box */}
-              <div className="p-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 min-h-[52px] text-xs">
-                {fullSpokenText ? (
-                  <p className="text-slate-800 dark:text-slate-200 leading-relaxed font-medium">
-                    <span>{transcript}</span>
-                    {interimTranscript && (
-                      <span className="text-slate-400 dark:text-slate-500 italic"> {interimTranscript}</span>
-                    )}
-                  </p>
-                ) : (
-                  <p className="text-slate-400 dark:text-slate-500 italic text-[11px]">
-                    {isListening
-                      ? 'Listening for voice input... Say: "Buy 2 boxes of cereal at Target for $5 tomorrow"'
-                      : 'Click "Start Recording" or speak into the microphone to transcribe automatically.'}
-                  </p>
-                )}
-              </div>
-
-              {/* Error Notice */}
-              {voiceError && (
-                <div className="p-2.5 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 rounded-xl text-xs text-amber-800 dark:text-amber-300 flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
-                  <span className="text-[11px]">{voiceError}</span>
-                </div>
-              )}
-
-              {/* Smart Auto-Fill Parsed Fields Preview */}
-              {voiceTarget === 'smart' && parsedVoiceData && parsedVoiceData.title && (
-                <div className="p-3 bg-white/80 dark:bg-slate-900/80 rounded-xl border border-slate-200/80 dark:border-slate-700 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1">
-                      <Sparkles className="w-3 h-3 text-amber-500" />
-                      <span>Extracted Fields Preview</span>
-                    </span>
-                    <button
-                      type="button"
-                      onClick={handleApplySmartVoice}
-                      className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-xs transition flex items-center gap-1"
-                    >
-                      {lastAppliedVoice ? (
-                        <>
-                          <Check className="w-3 h-3" />
-                          <span>Applied!</span>
-                        </>
-                      ) : (
-                        <>
-                          <Check className="w-3 h-3" />
-                          <span>Apply to All Fields</span>
-                        </>
-                      )}
-                    </button>
-                  </div>
-
-                  <div className="flex flex-wrap gap-1.5 text-[11px]">
-                    {parsedVoiceData.title && (
-                      <span className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-md font-semibold">
-                        🏷️ Title: {parsedVoiceData.title}
-                      </span>
-                    )}
-                    {parsedVoiceData.category && (
-                      <span className="px-2 py-0.5 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 rounded-md font-semibold">
-                        🛒 Category: {parsedVoiceData.category}
-                      </span>
-                    )}
-                    {parsedVoiceData.quantity && (
-                      <span className="px-2 py-0.5 bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 rounded-md">
-                        📦 Qty: {parsedVoiceData.quantity} {parsedVoiceData.unit || 'pcs'}
-                      </span>
-                    )}
-                    {parsedVoiceData.location && (
-                      <span className="px-2 py-0.5 bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 rounded-md">
-                        📍 Location: {parsedVoiceData.location}
-                      </span>
-                    )}
-                    {parsedVoiceData.timeScheduled && (
-                      <span className="px-2 py-0.5 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 rounded-md">
-                        ⏰ Time: {parsedVoiceData.timeScheduled}
-                      </span>
-                    )}
-                    {parsedVoiceData.dueDate && (
-                      <span className="px-2 py-0.5 bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 rounded-md">
-                        📅 Due: {parsedVoiceData.dueDate}
-                      </span>
-                    )}
-                    {parsedVoiceData.estimatedPrice !== undefined && (
-                      <span className="px-2 py-0.5 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 rounded-md">
-                        💰 Price: ${parsedVoiceData.estimatedPrice}
-                      </span>
-                    )}
-                    {parsedVoiceData.priority && (
-                      <span className="px-2 py-0.5 bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 rounded-md">
-                        🚨 Priority: {parsedVoiceData.priority}
-                      </span>
-                    )}
-                    {parsedVoiceData.notes && (
-                      <span className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-md">
-                        📝 Notes: {parsedVoiceData.notes}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Title - What needs to be done */}
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
-                What Needs to Be Done *
+                  1
+                </span>
+                <span>What</span>
               </label>
               {canEdit && (
                 <button
                   type="button"
-                  onClick={() => handleStartVoice('title')}
-                  className={`text-[11px] font-bold px-2 py-0.5 rounded-md flex items-center gap-1 transition ${
-                    isListening && voiceTarget === 'title'
+                  onClick={() => handleStartVoice('what')}
+                  className={`text-[11px] font-semibold px-2 py-0.5 rounded-md flex items-center gap-1 transition ${
+                    isListening && activeVoiceField === 'what'
                       ? 'bg-rose-500 text-white animate-pulse'
-                      : 'text-slate-500 hover:text-rose-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                      : 'text-slate-400 hover:text-rose-600 hover:bg-slate-100 dark:hover:bg-slate-800'
                   }`}
-                  title="Dictate Title"
+                  title="Dictate with voice"
                 >
                   <Mic className="w-3 h-3" />
-                  <span>{isListening && voiceTarget === 'title' ? 'Recording Title...' : 'Dictate Title'}</span>
+                  <span>{isListening && activeVoiceField === 'what' ? 'Listening...' : 'Voice'}</span>
                 </button>
               )}
             </div>
+
             <div className="relative">
               <input
                 type="text"
                 required
-                disabled={!canEdit}
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="e.g. Organic whole milk, Prepare Q3 financial report"
-                className="w-full px-4 py-2.5 pr-10 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
-              />
-              {canEdit && (
-                <button
-                  type="button"
-                  onClick={() => handleStartVoice('title')}
-                  className={`absolute right-2.5 top-1/2 -translate-y-1/2 p-1.5 rounded-lg transition ${
-                    isListening && voiceTarget === 'title'
-                      ? 'text-rose-600 bg-rose-50 dark:bg-rose-950/40 animate-bounce'
-                      : 'text-slate-400 hover:text-rose-500'
-                  }`}
-                  title="Dictate with microphone"
-                >
-                  <Mic className="w-4 h-4" />
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Where to get it & Time to get it done */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-            {/* Location / Where to get it */}
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 flex items-center gap-1">
-                  <MapPin className="w-3.5 h-3.5 text-rose-500" />
-                  <span>Where to get it (Location)</span>
-                </label>
-                <div className="flex items-center gap-2">
-                  {canEdit && (
-                    <button
-                      type="button"
-                      onClick={() => handleStartVoice('location')}
-                      className={`text-[10px] font-semibold px-1.5 py-0.5 rounded flex items-center gap-0.5 ${
-                        isListening && voiceTarget === 'location'
-                          ? 'bg-rose-500 text-white'
-                          : 'text-slate-400 hover:text-rose-600'
-                      }`}
-                      title="Dictate location"
-                    >
-                      <Mic className="w-2.5 h-2.5" />
-                      <span>Dictate</span>
-                    </button>
-                  )}
-                  {location && (
-                    <a
-                      href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(location)}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-[10px] text-rose-600 dark:text-rose-400 hover:underline flex items-center gap-0.5"
-                    >
-                      <span>Directions</span>
-                      <ExternalLink className="w-2.5 h-2.5" />
-                    </a>
-                  )}
-                </div>
-              </div>
-              <div className="relative">
-                <input
-                  type="text"
-                  disabled={!canEdit}
-                  value={location}
-                  onChange={(e) => setLocation(e.target.value)}
-                  placeholder="e.g. Trader Joe's, Target, Main St Store"
-                  className="w-full px-3.5 py-2 pr-9 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                />
-                {canEdit && (
-                  <button
-                    type="button"
-                    onClick={() => handleStartVoice('location')}
-                    className={`absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded transition ${
-                      isListening && voiceTarget === 'location'
-                        ? 'text-rose-600'
-                        : 'text-slate-400 hover:text-rose-500'
-                    }`}
-                  >
-                    <Mic className="w-3.5 h-3.5" />
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* Time to get it done */}
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5 flex items-center gap-1">
-                <Clock className="w-3.5 h-3.5 text-indigo-500" />
-                <span>Time to get it done</span>
-              </label>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  disabled={!canEdit}
-                  value={timeScheduled}
-                  onChange={(e) => setTimeScheduled(e.target.value)}
-                  placeholder="e.g. 03:30 PM or 15:30"
-                  className="flex-1 px-3.5 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                />
-                <select
-                  disabled={!canEdit}
-                  value={durationMinutes}
-                  onChange={(e) => setDurationMinutes(e.target.value)}
-                  className="w-24 px-2 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-700 dark:text-slate-300"
-                >
-                  <option value="15">15m</option>
-                  <option value="30">30m</option>
-                  <option value="45">45m</option>
-                  <option value="60">1h</option>
-                  <option value="120">2h</option>
-                </select>
-              </div>
-            </div>
-          </div>
-
-          {/* Priority, Cost & Due Date */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
-            {/* Priority */}
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">
-                Priority Level
-              </label>
-              <select
-                disabled={!canEdit}
-                value={priority}
-                onChange={(e) => setPriority(e.target.value as PriorityLevel)}
-                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white font-medium"
-              >
-                <option value="urgent">🚨 Urgent (Immediate)</option>
-                <option value="high">🔴 High Priority</option>
-                <option value="medium">🟡 Medium</option>
-                <option value="low">🟢 Low Priority</option>
-              </select>
-            </div>
-
-            {/* Estimated Price */}
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5 flex items-center gap-1">
-                <DollarSign className="w-3.5 h-3.5 text-emerald-500" />
-                <span>Price / Cost ($)</span>
-              </label>
-              <input
-                type="number"
-                step="0.01"
-                disabled={!canEdit}
-                value={estimatedPrice}
-                onChange={(e) => setEstimatedPrice(e.target.value)}
-                placeholder="0.00"
-                className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm text-slate-900 dark:text-white"
-              />
-            </div>
-
-            {/* Due Date */}
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5 flex items-center gap-1">
-                <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                <span>Due Date</span>
-              </label>
-              <input
-                type="date"
-                disabled={!canEdit}
-                value={dueDate}
-                onChange={(e) => setDueDate(e.target.value)}
-                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white"
+                disabled={!canEdit || loading}
+                value={what}
+                onChange={(e) => setWhat(e.target.value)}
+                placeholder="What needs to be done..."
+                className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2"
               />
             </div>
           </div>
 
-          {/* Quantity & Unit */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5 flex items-center gap-1">
-                <Hash className="w-3.5 h-3.5 text-slate-400" />
-                <span>Quantity</span>
-              </label>
-              <input
-                type="number"
-                min="0.1"
-                step="any"
-                disabled={!canEdit}
-                value={quantity}
-                onChange={(e) => setQuantity(parseFloat(e.target.value) || 1)}
-                className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">
-                Unit
-              </label>
-              <input
-                type="text"
-                disabled={!canEdit}
-                value={unit}
-                onChange={(e) => setUnit(e.target.value)}
-                placeholder="pcs, lbs, bags, pack, oz"
-                className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
-              />
-            </div>
-          </div>
-
-          {/* Store / Location Tagging Text Input Field */}
-          <div className="p-3.5 bg-emerald-50/50 dark:bg-emerald-950/20 rounded-2xl border border-emerald-100 dark:border-emerald-900/40 space-y-2.5">
+          {/* 2. Where */}
+          <div className="space-y-1.5">
             <div className="flex items-center justify-between">
-              <label className="text-xs font-bold uppercase tracking-wider text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5">
-                <Store className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                <span>Store / Specific Location Tag</span>
+              <label className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                <span 
+                  className="w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-extrabold"
+                  style={{
+                    backgroundColor: activeAccent.light,
+                    color: activeAccent.text
+                  }}
+                >
+                  2
+                </span>
+                <MapPin className="w-3.5 h-3.5 text-rose-500" />
+                <span>Where</span>
               </label>
               <div className="flex items-center gap-2">
                 {canEdit && (
                   <button
                     type="button"
-                    onClick={() => handleStartVoice('store')}
-                    className={`text-[10px] font-bold px-2 py-0.5 rounded-md flex items-center gap-1 transition ${
-                      isListening && voiceTarget === 'store'
+                    onClick={() => handleStartVoice('where')}
+                    className={`text-[11px] font-semibold px-2 py-0.5 rounded-md flex items-center gap-1 transition ${
+                      isListening && activeVoiceField === 'where'
                         ? 'bg-rose-500 text-white animate-pulse'
-                        : 'text-slate-600 dark:text-slate-300 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-white/60 dark:hover:bg-slate-800'
+                        : 'text-slate-400 hover:text-rose-600 hover:bg-slate-100 dark:hover:bg-slate-800'
                     }`}
-                    title="Dictate Store / Location"
+                    title="Dictate location"
                   >
                     <Mic className="w-3 h-3" />
-                    <span>{isListening && voiceTarget === 'store' ? 'Recording Store...' : 'Dictate'}</span>
+                    <span>{isListening && activeVoiceField === 'where' ? 'Listening...' : 'Voice'}</span>
                   </button>
                 )}
-                {(store || location) && (
+                {where && (
                   <a
-                    href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(store || location)}`}
+                    href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(where)}`}
                     target="_blank"
                     rel="noreferrer"
-                    className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 hover:underline flex items-center gap-1"
+                    className="text-[11px] hover:underline flex items-center gap-0.5 font-medium"
+                    style={{ color: activeAccent.primary }}
                   >
-                    <span>Directions</span>
-                    <ExternalLink className="w-3 h-3" />
+                    <span>Maps</span>
+                    <ExternalLink className="w-2.5 h-2.5" />
                   </a>
                 )}
               </div>
             </div>
 
-            {/* Free-form Text Input Field with Datalist Options */}
             <div className="relative">
               <input
                 type="text"
-                list="grocery-store-suggestions"
-                disabled={!canEdit}
-                value={store}
-                onChange={(e) => {
-                  setStore(e.target.value);
-                  setCategory(e.target.value);
-                }}
-                placeholder="e.g. Trader Joe's, Costco, Whole Foods, Target Downtown, Aisle 4..."
-                className="w-full px-3.5 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm text-slate-900 dark:text-white font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-2xs"
+                list="location-store-suggestions"
+                disabled={!canEdit || loading}
+                value={where}
+                onChange={(e) => setWhere(e.target.value)}
+                placeholder="Store, place, or address (e.g. Trader Joe's, Home, Office)..."
+                className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2"
               />
-              <datalist id="grocery-store-suggestions">
+              <datalist id="location-store-suggestions">
                 {GROCERY_STORES.map((storeOption) => (
                   <option key={storeOption} value={storeOption} />
                 ))}
+                <option value="Home" />
+                <option value="Office" />
+                <option value="Online" />
               </datalist>
             </div>
-
-            {/* Quick 1-Click Store Preset Chips */}
-            {canEdit && (
-              <div className="space-y-1">
-                <div className="text-[10px] uppercase font-bold text-slate-400 dark:text-slate-500 tracking-wider">
-                  Quick Store Suggestions
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {GROCERY_STORES.map((preset) => {
-                    const isSelected = store.trim().toLowerCase() === preset.toLowerCase();
-                    return (
-                      <button
-                        key={preset}
-                        type="button"
-                        onClick={() => {
-                          setStore(preset);
-                          setCategory(preset);
-                        }}
-                        className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition border ${
-                          isSelected
-                            ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs'
-                            : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-emerald-50 dark:hover:bg-slate-700 hover:border-emerald-200'
-                        }`}
-                      >
-                        {preset}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
           </div>
 
-          {/* Assigned collaborator */}
-          <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5 flex items-center gap-1">
-              <User className="w-3.5 h-3.5 text-slate-400" />
-              <span>Assigned Collaborator</span>
-            </label>
-            <select
-              disabled={!canEdit}
-              value={assignedToEmail}
-              onChange={(e) => setAssignedToEmail(e.target.value)}
-              className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white font-medium"
-            >
-              <option value="">Unassigned (Open for Anyone)</option>
-              <option value={list.ownerEmail}>{list.ownerName || list.ownerEmail} (Owner)</option>
-              {sharedMembers.map((m) => (
-                <option key={m.email} value={m.email}>
-                  {m.name || m.email} ({m.role})
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Custom Factors & Key-Value Metadata */}
-          <div className="p-3.5 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-2.5">
-            <label className="block text-xs font-extrabold uppercase tracking-wider text-slate-700 dark:text-slate-300">
-              Any Other Factors (Store Aisle, Coupon, Brand, etc.)
+          {/* 3. When */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+              <span 
+                className="w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-extrabold"
+                style={{
+                  backgroundColor: activeAccent.light,
+                  color: activeAccent.text
+                }}
+              >
+                3
+              </span>
+              <Calendar className="w-3.5 h-3.5 text-blue-500" />
+              <span>When</span>
             </label>
 
-            {customFactors.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 mb-2">
-                {customFactors.map((f) => (
-                  <span
-                    key={f.id}
-                    className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-medium text-slate-800 dark:text-slate-200"
-                  >
-                    <strong className="text-slate-900 dark:text-white">{f.label}:</strong>
-                    <span>{f.value}</span>
-                    {canEdit && (
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveFactor(f.id)}
-                        className="text-slate-400 hover:text-rose-500 ml-1"
-                      >
-                        ×
-                      </button>
-                    )}
-                  </span>
-                ))}
-              </div>
-            )}
-
-            {canEdit && (
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={newFactorKey}
-                  onChange={(e) => setNewFactorKey(e.target.value)}
-                  placeholder="Factor (e.g. Aisle, Size)"
-                  className="flex-1 px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white"
-                />
-                <input
-                  type="text"
-                  value={newFactorVal}
-                  onChange={(e) => setNewFactorVal(e.target.value)}
-                  placeholder="Value (e.g. Aisle 5B, Large)"
-                  className="flex-1 px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white"
-                />
-                <button
-                  type="button"
-                  onClick={handleAddFactor}
-                  className="px-3 py-1.5 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 text-slate-800 dark:text-white rounded-xl text-xs font-bold transition"
-                >
-                  + Add
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* Notes */}
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 flex items-center gap-1">
-                <FileText className="w-3.5 h-3.5 text-slate-400" />
-                <span>Notes, Instructions or Details</span>
-              </label>
-              {canEdit && (
-                <button
-                  type="button"
-                  onClick={() => handleStartVoice('notes')}
-                  className={`text-[11px] font-bold px-2 py-0.5 rounded-md flex items-center gap-1 transition ${
-                    isListening && voiceTarget === 'notes'
-                      ? 'bg-rose-500 text-white animate-pulse'
-                      : 'text-slate-500 hover:text-rose-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-                  }`}
-                  title="Dictate into Notes"
-                >
-                  <Mic className="w-3 h-3" />
-                  <span>{isListening && voiceTarget === 'notes' ? 'Recording Notes...' : 'Dictate Notes'}</span>
-                </button>
-              )}
-            </div>
-            <div className="relative">
-              <textarea
-                rows={3}
-                disabled={!canEdit}
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                placeholder="e.g. Specific brand, coupon code, extra instructions..."
-                className="w-full px-3.5 py-2 pr-9 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
-              />
-              {canEdit && (
-                <button
-                  type="button"
-                  onClick={() => handleStartVoice('notes')}
-                  className={`absolute right-2.5 bottom-3 p-1.5 rounded-lg transition ${
-                    isListening && voiceTarget === 'notes'
-                      ? 'text-rose-600 bg-rose-50 dark:bg-rose-950/40 animate-bounce'
-                      : 'text-slate-400 hover:text-rose-500'
-                  }`}
-                  title="Dictate into notes"
-                >
-                  <Mic className="w-4 h-4" />
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Google Calendar Link / Sync Box */}
-          <div className="p-3.5 bg-blue-50/60 dark:bg-blue-950/20 border border-blue-100 dark:border-blue-900/40 rounded-2xl flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2.5">
-              <CalendarPlus className="w-5 h-5 text-blue-600" />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {/* Date */}
               <div>
-                <div className="text-xs font-bold text-slate-800 dark:text-white">
-                  Google Calendar Link
+                <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">
+                  Date
+                </label>
+                <input
+                  type="date"
+                  disabled={!canEdit || loading}
+                  value={whenDate}
+                  onChange={(e) => setWhenDate(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2"
+                />
+              </div>
+
+              {/* Time */}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                    <Clock className="w-3 h-3 text-indigo-500" />
+                    <span>Time</span>
+                  </label>
+                  {canEdit && (
+                    <button
+                      type="button"
+                      onClick={() => handleStartVoice('whenTime')}
+                      className={`text-[10px] font-semibold px-1.5 py-0.2 rounded flex items-center gap-0.5 transition ${
+                        isListening && activeVoiceField === 'whenTime'
+                          ? 'bg-rose-500 text-white animate-pulse'
+                          : 'text-slate-400 hover:text-rose-600'
+                      }`}
+                      title="Dictate time"
+                    >
+                      <Mic className="w-2.5 h-2.5" />
+                      <span>{isListening && activeVoiceField === 'whenTime' ? 'Listening...' : 'Voice'}</span>
+                    </button>
+                  )}
                 </div>
-                <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                  {gcalSynced
-                    ? 'Synced to your Google Calendar'
-                    : 'Schedule this task to your Google Calendar'}
-                </div>
+                <input
+                  type="text"
+                  disabled={!canEdit || loading}
+                  value={whenTime}
+                  onChange={(e) => setWhenTime(e.target.value)}
+                  placeholder="e.g. 10:00 AM, 3:30 PM"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2"
+                />
               </div>
             </div>
+          </div>
 
-            <button
-              type="button"
-              onClick={handleManualGcalSync}
-              disabled={syncingGcal}
-              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-xs transition flex items-center gap-1.5 disabled:opacity-50"
-            >
-              {syncingGcal ? (
-                <RefreshCw className="w-3 h-3 animate-spin" />
-              ) : (
-                <CalendarPlus className="w-3 h-3" />
+          {/* Move Task To Section */}
+          <div className="space-y-2.5 pt-3 border-t border-slate-100 dark:border-slate-800">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                <ArrowRightLeft className="w-3.5 h-3.5" style={{ color: activeAccent.primary }} />
+                <span>Move Task To</span>
+              </label>
+
+              {isDifferentFromCurrent() && (
+                <span className="text-[11px] font-bold flex items-center gap-1" style={{ color: activeAccent.primary }}>
+                  <Check className="w-3 h-3" />
+                  Target: {getTargetDisplayName()}
+                </span>
               )}
-              <span>{gcalSynced ? 'Re-Sync' : 'Schedule to GCal'}</span>
-            </button>
+            </div>
+
+            {/* 4 Heading Options: Today, Grocery, Home, Other */}
+            <div className="grid grid-cols-4 gap-2 p-1.5 bg-slate-100 dark:bg-slate-800/80 rounded-2xl">
+              {/* Today */}
+              <button
+                type="button"
+                disabled={!canEdit || loading}
+                onClick={() => handleDestinationClick('today')}
+                className={`py-2 px-1 text-center rounded-xl text-xs font-bold flex flex-col sm:flex-row items-center justify-center gap-1 transition relative ${
+                  currentHeading === 'today'
+                    ? 'bg-white dark:bg-slate-900 shadow-xs ring-2'
+                    : targetHeading === 'today'
+                    ? 'text-white shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/60 dark:hover:bg-slate-700/60'
+                }`}
+                style={{
+                  ...(currentHeading === 'today' ? { color: activeAccent.text, borderColor: activeAccent.primary } : {}),
+                  ...(targetHeading === 'today' && currentHeading !== 'today' ? { backgroundColor: activeAccent.primary } : {})
+                }}
+                title={currentHeading === 'today' ? 'Currently in Today' : 'Click to move task to Today list'}
+              >
+                <CalendarCheck className="w-3.5 h-3.5 shrink-0" />
+                <span className="truncate">Today</span>
+                {currentHeading === 'today' && (
+                  <span 
+                    className="text-[9px] px-1 py-0.2 rounded font-extrabold hidden sm:inline"
+                    style={{ backgroundColor: activeAccent.light, color: activeAccent.text }}
+                  >
+                    Current
+                  </span>
+                )}
+              </button>
+
+              {/* Grocery */}
+              <button
+                type="button"
+                disabled={!canEdit || loading}
+                onClick={() => handleDestinationClick('grocery')}
+                className={`py-2 px-1 text-center rounded-xl text-xs font-bold flex flex-col sm:flex-row items-center justify-center gap-1 transition relative ${
+                  currentHeading === 'grocery'
+                    ? 'bg-white dark:bg-slate-900 shadow-xs ring-2'
+                    : targetHeading === 'grocery'
+                    ? 'text-white shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/60 dark:hover:bg-slate-700/60'
+                }`}
+                style={{
+                  ...(currentHeading === 'grocery' ? { color: activeAccent.text, borderColor: activeAccent.primary } : {}),
+                  ...(targetHeading === 'grocery' && currentHeading !== 'grocery' ? { backgroundColor: activeAccent.primary } : {})
+                }}
+                title={currentHeading === 'grocery' ? 'Currently in Grocery' : 'Click to move task to Grocery list'}
+              >
+                <ShoppingCart className="w-3.5 h-3.5 shrink-0" />
+                <span className="truncate">Grocery</span>
+                {currentHeading === 'grocery' && (
+                  <span 
+                    className="text-[9px] px-1 py-0.2 rounded font-extrabold hidden sm:inline"
+                    style={{ backgroundColor: activeAccent.light, color: activeAccent.text }}
+                  >
+                    Current
+                  </span>
+                )}
+              </button>
+
+              {/* Home */}
+              <button
+                type="button"
+                disabled={!canEdit || loading}
+                onClick={() => handleDestinationClick('home')}
+                className={`py-2 px-1 text-center rounded-xl text-xs font-bold flex flex-col sm:flex-row items-center justify-center gap-1 transition relative ${
+                  currentHeading === 'home'
+                    ? 'bg-white dark:bg-slate-900 shadow-xs ring-2'
+                    : targetHeading === 'home'
+                    ? 'text-white shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/60 dark:hover:bg-slate-700/60'
+                }`}
+                style={{
+                  ...(currentHeading === 'home' ? { color: activeAccent.text, borderColor: activeAccent.primary } : {}),
+                  ...(targetHeading === 'home' && currentHeading !== 'home' ? { backgroundColor: activeAccent.primary } : {})
+                }}
+                title={currentHeading === 'home' ? 'Currently in Home' : 'Click to move task to Home list'}
+              >
+                <Home className="w-3.5 h-3.5 shrink-0" />
+                <span className="truncate">Home</span>
+                {currentHeading === 'home' && (
+                  <span 
+                    className="text-[9px] px-1 py-0.2 rounded font-extrabold hidden sm:inline"
+                    style={{ backgroundColor: activeAccent.light, color: activeAccent.text }}
+                  >
+                    Current
+                  </span>
+                )}
+              </button>
+
+              {/* Other */}
+              <button
+                type="button"
+                disabled={!canEdit || loading}
+                onClick={() => {
+                  setTargetHeading('other');
+                  if (!selectedOtherListId && otherLists.length > 0) {
+                    setSelectedOtherListId(otherLists[0].id);
+                  }
+                }}
+                className={`py-2 px-1 text-center rounded-xl text-xs font-bold flex flex-col sm:flex-row items-center justify-center gap-1 transition relative ${
+                  currentHeading === 'other'
+                    ? 'bg-white dark:bg-slate-900 shadow-xs ring-2'
+                    : targetHeading === 'other'
+                    ? 'text-white shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/60 dark:hover:bg-slate-700/60'
+                }`}
+                style={{
+                  ...(currentHeading === 'other' ? { color: activeAccent.text, borderColor: activeAccent.primary } : {}),
+                  ...(targetHeading === 'other' && currentHeading !== 'other' ? { backgroundColor: activeAccent.primary } : {})
+                }}
+                title="Choose custom list under Other"
+              >
+                <FolderOpen className="w-3.5 h-3.5 shrink-0" />
+                <span className="truncate">Other</span>
+                {currentHeading === 'other' && (
+                  <span 
+                    className="text-[9px] px-1 py-0.2 rounded font-extrabold hidden sm:inline"
+                    style={{ backgroundColor: activeAccent.light, color: activeAccent.text }}
+                  >
+                    Current
+                  </span>
+                )}
+              </button>
+            </div>
+
+            {/* Sub-list selector when selected heading has multiple lists or when other is selected */}
+            {targetHeading === 'today' && todayLists.length > 1 && (
+              <div className="pt-1 animate-in fade-in slide-in-from-top-1 duration-150 space-y-2">
+                <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                  Select destination Today list:
+                </label>
+                <div className="flex gap-2">
+                  <select
+                    value={selectedTodayListId}
+                    onChange={(e) => setSelectedTodayListId(e.target.value)}
+                    disabled={!canEdit || loading}
+                    className="flex-1 px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  >
+                    {todayLists.map((tl) => (
+                      <option key={tl.id} value={tl.id}>
+                        {tl.title}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    disabled={loading || !selectedTodayListId || selectedTodayListId === (item.listId || list.id)}
+                    onClick={() => executeMoveOrSave('today', selectedTodayListId)}
+                    className="px-3.5 py-2 text-white rounded-xl text-xs font-bold shadow-xs transition flex items-center gap-1.5 shrink-0 disabled:opacity-50"
+                    style={{ backgroundColor: activeAccent.primary }}
+                  >
+                    <ArrowRight className="w-3.5 h-3.5" />
+                    <span>Move</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {targetHeading === 'grocery' && groceryLists.length > 1 && (
+              <div className="pt-1 animate-in fade-in slide-in-from-top-1 duration-150 space-y-2">
+                <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                  Select destination Grocery list:
+                </label>
+                <div className="flex gap-2">
+                  <select
+                    value={selectedGroceryListId}
+                    onChange={(e) => setSelectedGroceryListId(e.target.value)}
+                    disabled={!canEdit || loading}
+                    className="flex-1 px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2"
+                  >
+                    {groceryLists.map((gl) => (
+                      <option key={gl.id} value={gl.id}>
+                        {gl.title}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    disabled={loading || !selectedGroceryListId || selectedGroceryListId === (item.listId || list.id)}
+                    onClick={() => executeMoveOrSave('grocery', selectedGroceryListId)}
+                    className="px-3.5 py-2 text-white rounded-xl text-xs font-bold shadow-xs transition flex items-center gap-1.5 shrink-0 disabled:opacity-50"
+                    style={{ backgroundColor: activeAccent.primary }}
+                  >
+                    <ArrowRight className="w-3.5 h-3.5" />
+                    <span>Move</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {targetHeading === 'home' && homeLists.length > 1 && (
+              <div className="pt-1 animate-in fade-in slide-in-from-top-1 duration-150 space-y-2">
+                <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                  Select destination Home list:
+                </label>
+                <div className="flex gap-2">
+                  <select
+                    value={selectedHomeListId}
+                    onChange={(e) => setSelectedHomeListId(e.target.value)}
+                    disabled={!canEdit || loading}
+                    className="flex-1 px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2"
+                  >
+                    {homeLists.map((hl) => (
+                      <option key={hl.id} value={hl.id}>
+                        {hl.title}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    disabled={loading || !selectedHomeListId || selectedHomeListId === (item.listId || list.id)}
+                    onClick={() => executeMoveOrSave('home', selectedHomeListId)}
+                    className="px-3.5 py-2 text-white rounded-xl text-xs font-bold shadow-xs transition flex items-center gap-1.5 shrink-0 disabled:opacity-50"
+                    style={{ backgroundColor: activeAccent.primary }}
+                  >
+                    <ArrowRight className="w-3.5 h-3.5" />
+                    <span>Move</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* If Other is chosen, show choices of custom lists under Other */}
+            {targetHeading === 'other' && (
+              <div className="pt-1 animate-in fade-in slide-in-from-top-1 duration-150 space-y-2">
+                <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                  Select destination list under Other:
+                </label>
+                {otherLists.length > 0 ? (
+                  <div className="flex gap-2">
+                    <select
+                      value={selectedOtherListId}
+                      onChange={(e) => {
+                        setSelectedOtherListId(e.target.value);
+                      }}
+                      disabled={!canEdit || loading}
+                      className="flex-1 px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2"
+                    >
+                      {otherLists.map((ol) => (
+                        <option key={ol.id} value={ol.id}>
+                          {ol.title} {ol.type === 'grocery' ? '(Grocery List)' : ''}
+                        </option>
+                      ))}
+                    </select>
+
+                    <button
+                      type="button"
+                      disabled={loading || !selectedOtherListId || selectedOtherListId === (item.listId || list.id)}
+                      onClick={() => executeMoveOrSave('other', selectedOtherListId)}
+                      className="px-3.5 py-2 text-white rounded-xl text-xs font-bold shadow-xs transition flex items-center gap-1.5 shrink-0 disabled:opacity-50"
+                      style={{ backgroundColor: activeAccent.primary }}
+                    >
+                      <ArrowRight className="w-3.5 h-3.5" />
+                      <span>Move</span>
+                    </button>
+                  </div>
+                ) : (
+                  <div className="text-xs text-slate-500 dark:text-slate-400 italic py-2 bg-slate-50 dark:bg-slate-800/60 px-3.5 rounded-xl border border-dashed border-slate-200 dark:border-slate-700">
+                    No custom lists created under Other yet.
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Quick Action Button: Move directly right now if different */}
+            {canEdit && isDifferentFromCurrent() && (
+              <div className="pt-1 animate-in fade-in slide-in-from-top-1 duration-150">
+                <button
+                  type="button"
+                  disabled={loading || !what.trim()}
+                  onClick={() => {
+                    const targetSubListId =
+                      targetHeading === 'today' ? selectedTodayListId :
+                      targetHeading === 'grocery' ? selectedGroceryListId :
+                      targetHeading === 'home' ? selectedHomeListId : selectedOtherListId;
+                    executeMoveOrSave(targetHeading, targetSubListId);
+                  }}
+                  className="w-full py-2.5 px-4 text-white rounded-xl text-xs font-bold shadow-xs transition flex items-center justify-center gap-2"
+                  style={{ backgroundColor: activeAccent.primary }}
+                >
+                  <ArrowRight className="w-4 h-4" />
+                  <span>
+                    {loading ? (moveStatus || 'Moving task...') : `Move Task to ${getTargetDisplayName()} Now`}
+                  </span>
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Footer actions */}
-          <div className="pt-2 flex items-center justify-between gap-3 border-t border-slate-100 dark:border-slate-800">
+          <div className="pt-3 flex items-center justify-between gap-3 border-t border-slate-100 dark:border-slate-800">
             {canEdit ? (
               <button
                 type="button"
                 onClick={handleDelete}
-                className="px-3.5 py-2 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 border border-rose-200 dark:border-rose-800 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition"
+                disabled={loading}
+                className="px-3.5 py-2 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 border border-rose-200 dark:border-rose-800 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition disabled:opacity-50"
               >
                 <Trash2 className="w-3.5 h-3.5" />
                 <span>Delete</span>
@@ -1032,6 +927,7 @@ export const ItemDetailsModal: React.FC<ItemDetailsModalProps> = ({
             <div className="flex gap-2">
               <button
                 type="button"
+                disabled={loading}
                 onClick={() => {
                   if (isListening) stopListening();
                   onClose();
@@ -1044,12 +940,16 @@ export const ItemDetailsModal: React.FC<ItemDetailsModalProps> = ({
               {canEdit && (
                 <button
                   type="submit"
-                  disabled={loading || !title.trim()}
+                  disabled={loading || !what.trim()}
                   className="px-5 py-2 text-white text-xs font-bold rounded-xl shadow-md transition flex items-center gap-1.5 disabled:opacity-50"
                   style={{ backgroundColor: activeAccent.primary }}
                 >
                   <Save className="w-3.5 h-3.5" />
-                  <span>{loading ? 'Saving...' : 'Save Changes'}</span>
+                  <span>
+                    {loading 
+                      ? (moveStatus || 'Saving...') 
+                      : (isDifferentFromCurrent() ? `Move & Save Changes` : 'Save Changes')}
+                  </span>
                 </button>
               )}
             </div>
@@ -1060,3 +960,24 @@ export const ItemDetailsModal: React.FC<ItemDetailsModalProps> = ({
   );
 };
 
+export const ItemDetailsModal: React.FC<ItemDetailsModalProps> = ({
+  list,
+  item,
+  isOpen,
+  onClose,
+  canEdit,
+  lists,
+}) => {
+  if (!isOpen || !item) return null;
+
+  return (
+    <ItemDetailsModalContent
+      key={item.id}
+      list={list}
+      item={item}
+      onClose={onClose}
+      canEdit={canEdit}
+      lists={lists}
+    />
+  );
+};

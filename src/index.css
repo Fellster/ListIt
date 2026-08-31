@@ -14,3 +14,39 @@
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+
+/* Dynamic theme accent helper classes */
+.btn-accent {
+  background-color: var(--accent-primary, #059669);
+  color: #ffffff;
+  transition: all 0.15s ease-in-out;
+}
+.btn-accent:hover:not(:disabled) {
+  background-color: var(--accent-hover, #047857);
+}
+.btn-accent:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.bg-accent {
+  background-color: var(--accent-primary, #059669);
+}
+.bg-accent-hover:hover {
+  background-color: var(--accent-hover, #047857);
+}
+.bg-accent-light {
+  background-color: var(--accent-light, #ecfdf5);
+}
+.text-accent {
+  color: var(--accent-primary, #059669);
+}
+.text-accent-dark {
+  color: var(--accent-text, #065f46);
+}
+.border-accent {
+  border-color: var(--accent-primary, #059669);
+}
+.border-accent-light {
+  border-color: var(--accent-border, #a7f3d0);
+}
+

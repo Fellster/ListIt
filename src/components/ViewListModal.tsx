@@ -153,11 +153,6 @@ export const ViewListModal: React.FC<ViewListModalProps> = ({
                       <span className="text-sm font-bold text-slate-900 dark:text-white truncate">
                         {l.title}
                       </span>
-                      {l.isDailyFocus && (
-                        <span className="text-[10px] font-bold px-1.5 py-0.5 bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 rounded">
-                          Daily Focus
-                        </span>
-                      )}
                     </div>
                     <div className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-2 mt-0.5">
                       <span>{l.itemCount || 0} items</span>
