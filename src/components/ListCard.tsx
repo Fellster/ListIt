@@ -12,10 +12,11 @@ import {
   addListItem,
   parseNaturalTaskInput 
 } from '../services/listService';
-import { parseItemInput } from '../utils/groceryCategorizer';
+import { parseItemInput, isSpecificStore } from '../utils/groceryCategorizer';
 import { useAuth, getAvatarColor, getInitials } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { useSpeechRecognition } from '../utils/useSpeechRecognition';
+import { ListIcon } from '../utils/iconUtils';
 import confetti from 'canvas-confetti';
 import { 
   Users, 
@@ -41,7 +42,8 @@ import {
   Mic, 
   MicOff,
   Filter,
-  Calendar
+  Calendar,
+  Camera
 } from 'lucide-react';
 
 interface ListCardProps {
@@ -50,6 +52,7 @@ interface ListCardProps {
   onSelectItem?: (item: ListItemModel, list: ListModel) => void;
   onSelect?: (list: ListModel) => void;
   onOpenShare: (list: ListModel) => void;
+  onOpenOcr?: (listId: string) => void;
 }
 
 export const ListCard: React.FC<ListCardProps> = ({ 
@@ -57,7 +60,8 @@ export const ListCard: React.FC<ListCardProps> = ({
   allLists = [], 
   onSelectItem, 
   onSelect, 
-  onOpenShare 
+  onOpenShare,
+  onOpenOcr
 }) => {
   const { user, userProfile } = useAuth();
   const { activeAccent } = useTheme();
@@ -72,7 +76,7 @@ export const ListCard: React.FC<ListCardProps> = ({
 
   // Quick inline add on list card
   const [quickInput, setQuickInput] = useState('');
-  const [quickStore, setQuickStore] = useState<string>(list.type === 'grocery' ? 'Any' : '');
+  const [quickStore, setQuickStore] = useState<string>('');
   const [isAdding, setIsAdding] = useState(false);
 
   const currentUser = {
@@ -119,7 +123,7 @@ export const ListCard: React.FC<ListCardProps> = ({
     const storesSet = new Set<string>();
     items.forEach((it) => {
       const s = it.store || it.category || (it.location ? it.location : '');
-      if (s) storesSet.add(s);
+      if (s && isSpecificStore(s)) storesSet.add(s);
     });
     return Array.from(storesSet);
   }, [items]);
@@ -138,7 +142,8 @@ export const ListCard: React.FC<ListCardProps> = ({
     if (!groupByStore) return null;
     const map: Record<string, ListItemModel[]> = {};
     displayItems.forEach((item) => {
-      const store = item.store || item.category || (list.type === 'grocery' ? item.location : undefined) || 'Any';
+      const rawStore = item.store || item.category || (list.type === 'grocery' ? item.location : undefined);
+      const store = isSpecificStore(rawStore) ? rawStore! : 'Any Store';
       if (!map[store]) map[store] = [];
       map[store].push(item);
     });
@@ -278,11 +283,12 @@ export const ListCard: React.FC<ListCardProps> = ({
     setIsAdding(true);
     try {
       const natural = parseNaturalTaskInput(quickInput);
-      const chosenStore = quickStore || 'Any';
+      const chosenStore = quickStore && isSpecificStore(quickStore) ? quickStore : undefined;
       const groceryParsed = parseItemInput(natural.cleanTitle, chosenStore);
-      const assignedStore = list.type === 'grocery' 
+      const rawStore = list.type === 'grocery' 
         ? (natural.location || groceryParsed.store || chosenStore)
-        : (natural.location || (chosenStore !== 'Any' ? chosenStore : undefined));
+        : (natural.location || chosenStore);
+      const assignedStore = rawStore && isSpecificStore(rawStore) ? rawStore : undefined;
 
       await addListItem(
         list.id,
@@ -296,6 +302,8 @@ export const ListCard: React.FC<ListCardProps> = ({
           location: natural.location || (list.type === 'grocery' ? assignedStore : undefined),
           timeScheduled: natural.timeScheduled,
           estimatedPrice: natural.estimatedPrice,
+          dueDate: list.heading === 'today' ? new Date().toISOString().split('T')[0] : undefined,
+          isForToday: list.heading === 'today',
           order: items.length,
         },
         {
@@ -365,8 +373,8 @@ export const ListCard: React.FC<ListCardProps> = ({
       <div>
         <div className="flex items-start justify-between gap-3 mb-3">
           <div className="flex items-center gap-3 min-w-0 flex-1">
-            <div className="w-11 h-11 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-xl shrink-0 border border-slate-200/70 dark:border-slate-700">
-              {list.icon || (list.type === 'grocery' ? '🛒' : '📝')}
+            <div className="w-11 h-11 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-xl shrink-0 border border-slate-200/70 dark:border-slate-700 text-slate-700 dark:text-slate-200">
+              <ListIcon icon={list.icon} type={list.type} className="w-5 h-5" />
             </div>
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2 flex-wrap">
@@ -547,7 +555,8 @@ export const ListCard: React.FC<ListCardProps> = ({
                   {storeItems.map((item, idx) => {
                     const isFirst = idx === 0;
                     const isLast = idx === storeItems.length - 1;
-                    const itemStore = item.store || item.category || (list.type === 'grocery' ? item.location : undefined);
+                    const rawItemStore = item.store || item.category || (list.type === 'grocery' ? item.location : undefined);
+                    const itemStore = isSpecificStore(rawItemStore) ? rawItemStore : undefined;
 
                     return (
                       <div
@@ -622,11 +631,11 @@ export const ListCard: React.FC<ListCardProps> = ({
                                     e.stopPropagation();
                                     onSelectItem && onSelectItem(item, list);
                                   }}
-                                  className="text-[10px] font-bold px-1.5 py-0.2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-300 rounded transition inline-flex items-center gap-0.5 shrink-0 border border-slate-200/60 dark:border-slate-600"
+                                  className="p-1 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 rounded transition inline-flex items-center justify-center shrink-0 border border-slate-200/60 dark:border-slate-600"
                                   title="Edit task"
+                                  aria-label="Edit task"
                                 >
                                   <Edit3 className="w-2.5 h-2.5 text-slate-500 dark:text-slate-400" />
-                                  <span>Edit</span>
                                 </button>
                               )}
 
@@ -749,7 +758,8 @@ export const ListCard: React.FC<ListCardProps> = ({
         ) : (
           /* FLAT SEQUENTIAL VIEW */
           displayItems.map((item, index) => {
-            const itemStore = item.store || item.category || (list.type === 'grocery' ? item.location : undefined);
+            const rawItemStore = item.store || item.category || (list.type === 'grocery' ? item.location : undefined);
+            const itemStore = isSpecificStore(rawItemStore) ? rawItemStore : undefined;
             const isFirst = index === 0;
             const isLast = index === displayItems.length - 1;
 
@@ -827,11 +837,11 @@ export const ListCard: React.FC<ListCardProps> = ({
                             e.stopPropagation();
                             onSelectItem && onSelectItem(item, list);
                           }}
-                          className="text-[10px] font-bold px-1.5 py-0.2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-300 rounded transition inline-flex items-center gap-0.5 shrink-0 border border-slate-200/60 dark:border-slate-600"
+                          className="p-1 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 rounded transition inline-flex items-center justify-center shrink-0 border border-slate-200/60 dark:border-slate-600"
                           title="Edit task"
+                          aria-label="Edit task"
                         >
                           <Edit3 className="w-2.5 h-2.5 text-slate-500 dark:text-slate-400" />
-                          <span>Edit</span>
                         </button>
                       )}
 
@@ -1001,6 +1011,18 @@ export const ListCard: React.FC<ListCardProps> = ({
                 </button>
               </div>
 
+              {onOpenOcr && (
+                <button
+                  type="button"
+                  id={`btn-ocr-scan-${list.id}`}
+                  onClick={() => onOpenOcr(list.id)}
+                  className="p-1.5 text-slate-500 hover:text-emerald-600 dark:hover:text-emerald-400 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl transition border border-slate-200/80 dark:border-slate-700 shrink-0"
+                  title="Take photo & OCR scan items into this list"
+                >
+                  <Camera className="w-3.5 h-3.5" />
+                </button>
+              )}
+
               <button
                 type="submit"
                 id={`btn-add-item-${list.id}`}
@@ -1018,21 +1040,21 @@ export const ListCard: React.FC<ListCardProps> = ({
                 <span className="text-slate-400 font-semibold shrink-0">Store:</span>
                 {GROCERY_STORES.slice(0, 6).map((st) => (
                   <button
-                    key={st}
+                    key={st.id}
                     type="button"
-                    onClick={() => setQuickStore(st)}
+                    onClick={() => setQuickStore(quickStore === st.name ? '' : st.name)}
                     className={`px-2 py-0.5 rounded transition whitespace-nowrap cursor-pointer ${
-                      quickStore === st
+                      quickStore === st.name
                         ? 'font-bold border'
                         : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
                     }`}
-                    style={quickStore === st ? {
+                    style={quickStore === st.name ? {
                       backgroundColor: activeAccent.light,
                       color: activeAccent.text,
                       borderColor: activeAccent.border
                     } : {}}
                   >
-                    {st}
+                    {st.name}
                   </button>
                 ))}
               </div>

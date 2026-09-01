@@ -367,13 +367,13 @@ export const CreateListModal: React.FC<CreateListModalProps> = ({ isOpen, onClos
                     Theme Color
                   </label>
                   <div className="flex flex-wrap gap-2.5">
-                    {LIST_COLOR_PALETTES.map((pal) => (
+                    {Object.entries(LIST_COLOR_PALETTES).map(([palId, pal]) => (
                       <button
-                        key={pal.id}
+                        key={palId}
                         type="button"
-                        onClick={() => setColor(pal.id)}
-                        className={`w-7 h-7 rounded-full ${pal.bg} transition transform flex items-center justify-center ${
-                          color === pal.id ? 'ring-2 ring-offset-2 ring-slate-800 scale-110' : 'opacity-80 hover:opacity-100'
+                        onClick={() => setColor(palId)}
+                        className={`w-7 h-7 rounded-full ${pal.bg} transition transform flex items-center justify-center cursor-pointer ${
+                          color === palId ? 'ring-2 ring-offset-2 ring-slate-800 scale-110' : 'opacity-80 hover:opacity-100'
                         }`}
                       />
                     ))}

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { ListModel, ListItemModel, HeadingKey } from '../types';
 import { ListCard } from './ListCard';
 import { useTheme } from '../context/ThemeContext';
+import { useCustomHeadings } from '../context/CustomHeadingsContext';
 import { 
   ShoppingCart, 
   Home, 
@@ -9,35 +10,50 @@ import {
   CalendarCheck, 
   Plus, 
   Search, 
-  Filter,
-  Check
+  Trash2,
+  Edit2,
+  Check,
+  Folder
 } from 'lucide-react';
 
 interface HeadingDirectoryViewProps {
   heading: HeadingKey;
+  headingLabel?: string;
   lists: ListModel[];
   allLists: ListModel[];
   onSelectList: (list: ListModel) => void;
   onSelectItem: (item: ListItemModel, list: ListModel) => void;
   onOpenShare: (list: ListModel) => void;
   onCreateList: (title: string, heading: HeadingKey) => void;
+  onOpenOcr?: (listId: string) => void;
+  onDeleteCustomHeading?: (id: string) => void;
   loading?: boolean;
 }
 
 export const HeadingDirectoryView: React.FC<HeadingDirectoryViewProps> = ({
   heading,
+  headingLabel,
   lists,
   allLists,
   onSelectList,
   onSelectItem,
   onOpenShare,
   onCreateList,
+  onOpenOcr,
+  onDeleteCustomHeading,
   loading = false,
 }) => {
   const { activeAccent } = useTheme();
+  const { customHeadings, removeCustomHeading, renameCustomHeading } = useCustomHeadings();
   const [searchQuery, setSearchQuery] = useState('');
   const [isAddingInline, setIsAddingInline] = useState(false);
   const [inlineTitle, setInlineTitle] = useState('');
+  const [isRenamingHeading, setIsRenamingHeading] = useState(false);
+  const [headingRenameInput, setHeadingRenameInput] = useState('');
+  const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
+
+  const customHeadingObj = customHeadings.find((h) => h.id === heading);
+  const isCustomHeading = !!customHeadingObj;
 
   const getHeadingConfig = (h: HeadingKey) => {
     switch (h) {
@@ -63,15 +79,15 @@ export const HeadingDirectoryView: React.FC<HeadingDirectoryViewProps> = ({
         };
       case 'today':
         return {
-          title: "Today's Lists",
+          title: 'Today Lists',
           singularTitle: 'Today List',
           icon: <CalendarCheck className="w-5 h-5" style={{ color: activeAccent.primary }} />,
-          placeholder: "e.g. Today's Priorities, Morning Errands, Work Tasks Today",
+          placeholder: 'e.g. Today Priorities, Morning Errands, Work Tasks Today',
           description: 'Custom task lists and daily routines scheduled for today',
-          emptyMessage: "No custom today's lists yet",
+          emptyMessage: 'No custom today lists yet',
           emptyPrompt: "Create a focused list for today's errands, routines, or priority goals.",
         };
-      default:
+      case 'other':
         return {
           title: 'Other Lists',
           singularTitle: 'List',
@@ -81,6 +97,18 @@ export const HeadingDirectoryView: React.FC<HeadingDirectoryViewProps> = ({
           emptyMessage: 'No other lists yet',
           emptyPrompt: 'Create a custom list for projects, packing, reading, or notes.',
         };
+      default: {
+        const display = headingLabel || customHeadingObj?.label || (typeof h === 'string' ? h : 'Custom');
+        return {
+          title: `${display} Lists`,
+          singularTitle: `${display} List`,
+          icon: <Folder className="w-5 h-5" style={{ color: activeAccent.primary }} />,
+          placeholder: `e.g. New ${display} Checklist, Priority Items, Project Plans...`,
+          description: `Custom ${display} lists, checklists, and projects`,
+          emptyMessage: `No ${display.toLowerCase()} lists yet`,
+          emptyPrompt: `Create your first list under ${display}.`,
+        };
+      }
     }
   };
 
@@ -105,23 +133,83 @@ export const HeadingDirectoryView: React.FC<HeadingDirectoryViewProps> = ({
     setIsAddingInline(false);
   };
 
+  const handleHeadingRenameSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!headingRenameInput.trim()) return;
+    renameCustomHeading(heading, headingRenameInput.trim());
+    setIsRenamingHeading(false);
+  };
+
   return (
     <main className="max-w-5xl w-full mx-auto px-4 sm:px-6 py-6 space-y-5 flex-1">
       {/* Header Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200/80 dark:border-slate-800">
         <div className="flex items-center gap-3">
-          <div className="p-2 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-2xs">
+          <div className="p-2 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-2xs shrink-0">
             {config.icon}
           </div>
           <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight">
-                {config.title}
-              </h1>
+            <div className="flex items-center gap-2 flex-wrap">
+              {!isRenamingHeading ? (
+                <>
+                  <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight">
+                    {config.title}
+                  </h1>
+                  {isCustomHeading && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setHeadingRenameInput(customHeadingObj?.label || '');
+                        setIsRenamingHeading(true);
+                      }}
+                      className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                      title="Rename this heading"
+                    >
+                      <Edit2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </>
+              ) : (
+                <form onSubmit={handleHeadingRenameSubmit} className="flex items-center gap-1.5">
+                  <input
+                    type="text"
+                    autoFocus
+                    value={headingRenameInput}
+                    onChange={(e) => setHeadingRenameInput(e.target.value)}
+                    className="px-2.5 py-1 text-base font-extrabold bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2"
+                  />
+                  <button
+                    type="submit"
+                    className="p-1.5 bg-emerald-600 text-white rounded-lg text-xs hover:bg-emerald-700 transition"
+                  >
+                    <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsRenamingHeading(false)}
+                    className="px-2 py-1 text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                  >
+                    Cancel
+                  </button>
+                </form>
+              )}
+
               <span className="text-xs font-bold text-slate-500 dark:text-slate-400 bg-slate-200/70 dark:bg-slate-800 px-2 py-0.5 rounded-full">
                 {lists.length} {lists.length === 1 ? 'list' : 'lists'}
                 {totalItems > 0 && ` • ${totalItems} items`}
               </span>
+
+              {isCustomHeading && onDeleteCustomHeading && (
+                <button
+                  type="button"
+                  onClick={() => setIsConfirmingDelete(true)}
+                  className="text-xs text-rose-500 hover:text-rose-600 dark:hover:text-rose-400 hover:underline ml-1 flex items-center gap-1 cursor-pointer"
+                  title="Delete this custom list"
+                >
+                  <Trash2 className="w-3 h-3" />
+                  <span>Delete List</span>
+                </button>
+              )}
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400 hidden sm:block mt-0.5">
               {config.description}
@@ -145,7 +233,7 @@ export const HeadingDirectoryView: React.FC<HeadingDirectoryViewProps> = ({
           <button
             type="button"
             onClick={() => setIsAddingInline(true)}
-            className="px-3.5 py-1.5 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-2xs shrink-0 whitespace-nowrap hover:brightness-110 active:scale-95"
+            className="px-3.5 py-1.5 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-2xs shrink-0 whitespace-nowrap hover:brightness-110 active:scale-95 cursor-pointer"
             style={{ backgroundColor: activeAccent.primary }}
           >
             <Plus className="w-3.5 h-3.5" />
@@ -231,7 +319,7 @@ export const HeadingDirectoryView: React.FC<HeadingDirectoryViewProps> = ({
             <button
               type="button"
               onClick={() => setIsAddingInline(true)}
-              className="px-4 py-2 text-white text-xs font-bold rounded-xl shadow-xs transition inline-flex items-center gap-1.5 hover:brightness-110 active:scale-95"
+              className="px-4 py-2 text-white text-xs font-bold rounded-xl shadow-xs transition inline-flex items-center gap-1.5 hover:brightness-110 active:scale-95 cursor-pointer"
               style={{ backgroundColor: activeAccent.primary }}
             >
               <Plus className="w-4 h-4" />
@@ -249,8 +337,59 @@ export const HeadingDirectoryView: React.FC<HeadingDirectoryViewProps> = ({
               onSelectItem={(item, l) => onSelectItem(item, l)}
               onSelect={(l) => onSelectList(l)}
               onOpenShare={(l) => onOpenShare(l)}
+              onOpenOcr={onOpenOcr}
             />
           ))}
+        </div>
+      )}
+
+      {/* Delete Heading Confirmation Modal */}
+      {isConfirmingDelete && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs animate-in fade-in duration-150"
+          onClick={() => setIsConfirmingDelete(false)}
+        >
+          <div 
+            className="relative w-full max-w-sm bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 p-5 space-y-4 animate-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-xl bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0 mt-0.5">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-extrabold text-slate-900 dark:text-white">
+                  Delete "{customHeadingObj?.label || 'List'}" list?
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                  This will delete this custom list from your navigation. Any existing lists will be kept safely in "Other".
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => setIsConfirmingDelete(false)}
+                className="px-4 py-2 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (onDeleteCustomHeading) {
+                    onDeleteCustomHeading(heading);
+                  }
+                  setIsConfirmingDelete(false);
+                }}
+                className="px-4 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl transition flex items-center gap-1.5 shadow-xs cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Delete List</span>
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </main>

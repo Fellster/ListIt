@@ -16,6 +16,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { ListModel, ListItemModel, ActivityEntry, PermissionRole, HeadingKey, getListHeading } from '../types';
+import { isSpecificStore } from '../utils/groceryCategorizer';
 
 // Local Storage Cache Keys
 const STORAGE_LISTS_KEY = 'listit_cached_lists';
@@ -42,7 +43,7 @@ function saveLocalLists(lists: ListModel[]) {
   }
 }
 
-function getLocalItems(listId: string): ListItemModel[] {
+export function getLocalItems(listId: string): ListItemModel[] {
   try {
     const raw = localStorage.getItem(STORAGE_ITEMS_PREFIX + listId);
     return raw ? JSON.parse(raw) : [];
@@ -653,6 +654,80 @@ export async function addListItem(
 }
 
 /**
+ * Adds multiple items to a list in a batch (e.g. from camera OCR scan)
+ */
+export async function addBatchListItems(
+  listId: string,
+  items: Array<Omit<ListItemModel, 'id' | 'listId' | 'createdAt' | 'updatedAt' | 'completed'> & { completed?: boolean }>,
+  user: { email: string; displayName: string }
+): Promise<string[]> {
+  if (!items || items.length === 0) return [];
+
+  const createdIds: string[] = [];
+  const newItemsData: ListItemModel[] = items.map((item, idx) => {
+    const itemId = 'item_' + Date.now() + '_' + idx + '_' + Math.random().toString(36).substring(2, 6);
+    createdIds.push(itemId);
+    return {
+      ...item,
+      id: itemId,
+      listId,
+      completed: item.completed ?? false,
+      order: item.order !== undefined ? item.order : idx,
+      createdAt: new Date().toISOString() as any,
+      updatedAt: new Date().toISOString() as any,
+    };
+  });
+
+  // Update local items cache
+  const currentItems = getLocalItems(listId);
+  saveLocalItems(listId, [...newItemsData, ...currentItems]);
+
+  // Update parent list count in local cache
+  const currentLists = getLocalLists();
+  saveLocalLists(
+    currentLists.map((l) =>
+      l.id === listId
+        ? { ...l, itemCount: (l.itemCount || 0) + items.length, updatedAt: new Date().toISOString() as any }
+        : l
+    )
+  );
+
+  try {
+    const batch = writeBatch(db);
+    newItemsData.forEach((newItem) => {
+      const itemRef = doc(collection(db, 'lists', listId, 'items'), newItem.id);
+      batch.set(itemRef, {
+        ...newItem,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+    });
+
+    const listRef = doc(db, 'lists', listId);
+    batch.update(listRef, {
+      itemCount: increment(items.length),
+      updatedAt: serverTimestamp(),
+    });
+
+    const actRef = doc(collection(db, 'lists', listId, 'activity'));
+    batch.set(actRef, {
+      listId,
+      userEmail: user.email,
+      userName: user.displayName,
+      action: 'created_item',
+      details: `Added ${items.length} items from Camera OCR scan`,
+      timestamp: serverTimestamp(),
+    });
+
+    await batch.commit();
+  } catch (err: any) {
+    console.info('Firestore batch add items notice:', err?.message || err);
+  }
+
+  return createdIds;
+}
+
+/**
  * Updates item fields
  */
 export async function updateListItem(
@@ -1162,12 +1237,18 @@ export function parseNaturalTaskInput(input: string): {
   // 2. Location tags like @Trader Joe's or @Hardware Store or [at Store Name]
   const atMatch = str.match(/@([^@\n\$\!]+)/);
   if (atMatch) {
-    location = atMatch[1].trim();
+    const rawLoc = atMatch[1].trim();
+    if (isSpecificStore(rawLoc)) {
+      location = rawLoc;
+    }
     str = str.replace(atMatch[0], '').trim();
   } else {
     const whereMatch = str.match(/\b(?:at|location:)\s+([A-Z][A-Za-z0-9\s'&]+(?:store|market|pharmacy|office|mall|depot|station|clinic|center|hall|lab|gym|home|room \d+|trader joe's|target|walmart|costco|safeway|kroger|cvs|walgreens|whole foods|ikea|home depot|best buy|apple store|starbucks)?)/i);
     if (whereMatch && whereMatch[1] && whereMatch[1].trim().length > 2) {
-      location = whereMatch[1].trim();
+      const rawLoc = whereMatch[1].trim();
+      if (isSpecificStore(rawLoc)) {
+        location = rawLoc;
+      }
     }
   }
 

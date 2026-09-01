@@ -7,7 +7,7 @@ import {
   createList,
   moveItemToList
 } from '../services/listService';
-import { parseItemInput } from '../utils/groceryCategorizer';
+import { parseItemInput, isSpecificStore } from '../utils/groceryCategorizer';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { useSpeechRecognition } from '../utils/useSpeechRecognition';
@@ -21,7 +21,9 @@ import {
   Calendar as CalendarIcon,
   Edit3,
   MapPin,
-  MoveRight
+  MoveRight,
+  Camera,
+  Sparkles
 } from 'lucide-react';
 
 interface TodayViewProps {
@@ -32,6 +34,7 @@ interface TodayViewProps {
   onOpenCreateList: () => void;
   onOpenAddToList?: (defaultListId?: string) => void;
   onOpenViewList?: () => void;
+  onOpenOcr?: (defaultListId?: string) => void;
 }
 
 export const TodayView: React.FC<TodayViewProps> = ({
@@ -39,6 +42,7 @@ export const TodayView: React.FC<TodayViewProps> = ({
   allTodayItems,
   onSelectItem,
   onOpenList,
+  onOpenOcr,
 }) => {
   const { user, userProfile } = useAuth();
   const { activeAccent } = useTheme();
@@ -117,6 +121,7 @@ export const TodayView: React.FC<TodayViewProps> = ({
 
       const todayStr = new Date().toISOString().split('T')[0];
       const parsed = parseItemInput(newItemTitle.trim());
+      const specificStore = parsed.store && isSpecificStore(parsed.store) ? parsed.store : undefined;
 
       await addListItem(
         targetListId,
@@ -124,8 +129,8 @@ export const TodayView: React.FC<TodayViewProps> = ({
           title: parsed.title,
           quantity: parsed.quantity > 1 ? parsed.quantity : undefined,
           unit: parsed.quantity > 1 ? parsed.unit : undefined,
-          store: parsed.store,
-          category: parsed.store,
+          store: specificStore,
+          category: specificStore,
           dueDate: todayStr,
           isForToday: true,
           priority: 'medium',
@@ -203,7 +208,7 @@ export const TodayView: React.FC<TodayViewProps> = ({
         <div className="flex items-center gap-2">
           <CalendarIcon className="w-5 h-5" style={{ color: activeAccent.primary }} />
           <h1 className="text-xl font-extrabold text-slate-900 dark:text-white">
-            Today's List
+            Today
           </h1>
         </div>
         <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
@@ -245,6 +250,19 @@ export const TodayView: React.FC<TodayViewProps> = ({
               <Mic className="w-4 h-4" />
             </button>
           </div>
+
+          {onOpenOcr && (
+            <button
+              type="button"
+              id="btn-camera-ocr-today"
+              onClick={() => onOpenOcr(defaultList.id)}
+              className="p-2.5 text-slate-600 dark:text-slate-300 hover:text-emerald-600 dark:hover:text-emerald-400 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 rounded-xl transition shadow-2xs shrink-0 flex items-center gap-1 cursor-pointer"
+              title="Take picture & OCR scan items into Today"
+            >
+              <Camera className="w-4 h-4" />
+              <span className="text-xs font-bold hidden sm:inline">Camera</span>
+            </button>
+          )}
 
           <button
             type="submit"
@@ -318,8 +336,8 @@ export const TodayView: React.FC<TodayViewProps> = ({
                       </span>
                     )}
 
-                    {/* Store badge if already set */}
-                    {item.store && (
+                    {/* Store badge if specifically set */}
+                    {item.store && isSpecificStore(item.store) && (
                       <span 
                         className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md border shrink-0 flex items-center gap-0.5"
                         style={{ 
@@ -340,11 +358,11 @@ export const TodayView: React.FC<TodayViewProps> = ({
                         e.stopPropagation();
                         if (parentList) onSelectItem(item, parentList);
                       }}
-                      className="text-[11px] font-semibold px-2 py-0.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-md transition inline-flex items-center gap-1 shrink-0 border border-slate-200/60 dark:border-slate-700"
+                      className="p-1 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 rounded-md transition inline-flex items-center justify-center shrink-0 border border-slate-200/60 dark:border-slate-700"
                       title="Edit task (What, Where, When)"
+                      aria-label="Edit task"
                     >
                       <Edit3 className="w-3 h-3 text-slate-500 dark:text-slate-400" />
-                      <span>Edit</span>
                     </button>
                   </div>
                 </div>

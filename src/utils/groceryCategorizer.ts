@@ -12,7 +12,26 @@ const QUANTITY_UNITS = [
   'gal', 'gallon', 'qt', 'quart', 'pt', 'pint', 'carton', 'jar', 'jars', 'piece', 'pcs'
 ];
 
-export function parseItemInput(rawInput: string, defaultStore: string = 'Any'): ParsedItemInput {
+/**
+ * Checks if a store name is a specific, explicitly defined store
+ * (e.g. Costco, Trader Joe's, Safeway, Target) rather than generic "(any)" / "any"
+ */
+export function isSpecificStore(store?: string | null): boolean {
+  if (!store) return false;
+  const clean = store.trim().replace(/[()]/g, '').trim().toLowerCase();
+  return (
+    clean !== '' &&
+    clean !== 'any' &&
+    clean !== 'all' &&
+    clean !== 'any store' &&
+    clean !== 'all stores' &&
+    clean !== 'none' &&
+    clean !== 'n/a' &&
+    clean !== 'other'
+  );
+}
+
+export function parseItemInput(rawInput: string, defaultStore?: string): ParsedItemInput {
   let cleaned = rawInput.trim();
   let quantity = 1;
   let unit = 'pcs';
@@ -21,7 +40,10 @@ export function parseItemInput(rawInput: string, defaultStore: string = 'Any'): 
   // Check if store is mentioned via @Store or at Store or store: Store
   const storeAtMatch = cleaned.match(/@([^@\n,]+)/);
   if (storeAtMatch) {
-    explicitStore = storeAtMatch[1].trim();
+    const matchedStore = storeAtMatch[1].trim();
+    if (isSpecificStore(matchedStore)) {
+      explicitStore = matchedStore;
+    }
     cleaned = cleaned.replace(storeAtMatch[0], '').trim();
   }
 
@@ -68,7 +90,8 @@ export function parseItemInput(rawInput: string, defaultStore: string = 'Any'): 
     ? cleaned.charAt(0).toUpperCase() + cleaned.slice(1)
     : rawInput;
 
-  const resolvedStore = explicitStore || defaultStore;
+  const validDefaultStore = defaultStore && isSpecificStore(defaultStore) ? defaultStore.trim() : undefined;
+  const resolvedStore = explicitStore || validDefaultStore || undefined;
 
   return {
     title: formattedTitle,

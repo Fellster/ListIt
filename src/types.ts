@@ -16,7 +16,16 @@ export interface SharedMember {
   avatarColor?: string;
 }
 
-export type HeadingKey = 'today' | 'grocery' | 'home' | 'other';
+export type StandardHeadingKey = 'today' | 'grocery' | 'home' | 'other';
+export type HeadingKey = StandardHeadingKey | string;
+
+export interface CustomHeading {
+  id: string; // e.g. "work", "fitness", "custom_123"
+  label: string; // e.g. "Work", "Fitness", "Projects"
+  icon?: string;
+  color?: string;
+  createdAt?: string;
+}
 
 export interface ListModel {
   id: string;
@@ -49,25 +58,22 @@ export function getListHeading(list: ListModel): HeadingKey {
     list.type === 'grocery' ||
     t.includes('grocery') ||
     t.includes('market') ||
-    t.includes('store') ||
+    t.includes('trader') ||
     t.includes('costco') ||
-    t.includes('trader joe') ||
     t.includes('safeway') ||
     t.includes('target') ||
     t.includes('supermarket') ||
-    t.includes('food') ||
-    t.includes('shop')
+    t.includes('food')
   ) {
     return 'grocery';
   }
   if (
-    t === 'home' ||
     t.includes('home') ||
     t.includes('house') ||
     t.includes('chore') ||
-    t.includes('repair') ||
     t.includes('yard') ||
     t.includes('garden') ||
+    t.includes('repair') ||
     t.includes('cleaning') ||
     t.includes('maintenance')
   ) {
@@ -93,6 +99,7 @@ export interface ListItemModel {
   priority?: PriorityLevel;
   dueDate?: string; // YYYY-MM-DD
   isForToday?: boolean;
+  order?: number;
   // Factor 1: Location ("Where to get it")
   location?: string;
   // Factor 2: Time ("Time to get it done")
@@ -108,19 +115,43 @@ export interface ListItemModel {
   googleCalendarEventLink?: string;
   assignedTo?: string;
   assignedToEmail?: string;
-  order?: number;
-  createdAt: any;
+  assignedToName?: string;
+  createdAt?: any;
   updatedAt?: any;
+  position?: number;
 }
 
 export interface ActivityEntry {
   id: string;
   listId: string;
+  userId: string;
   userEmail: string;
   userName: string;
-  action: 'created_item' | 'completed_item' | 'uncompleted_item' | 'deleted_item' | 'updated_item' | 'shared_list' | 'changed_permission' | 'removed_member';
-  details: string;
+  action: 
+    | 'create_item' 
+    | 'complete_item' 
+    | 'uncomplete_item' 
+    | 'delete_item' 
+    | 'edit_item' 
+    | 'share_list' 
+    | 'create_list'
+    | 'completed_item'
+    | 'created_item'
+    | 'deleted_item'
+    | 'changed_permission'
+    | 'shared_list';
+  itemTitle?: string;
   timestamp: any;
+  details?: string;
+}
+
+export interface GoogleCalendarEvent {
+  id: string;
+  summary: string;
+  description?: string;
+  start?: { dateTime?: string; date?: string };
+  end?: { dateTime?: string; date?: string };
+  htmlLink?: string;
 }
 
 export interface UserProfile {
@@ -128,119 +159,152 @@ export interface UserProfile {
   email: string;
   displayName: string;
   photoURL?: string;
-  theme?: ThemeConfig;
+  theme?: 'emerald' | 'blue' | 'purple' | 'amber' | 'rose' | 'slate' | 'teal' | 'indigo' | 'coral' | 'ocean' | 'forest';
+  isDarkMode?: boolean;
+  emailNotifications?: boolean;
+  defaultStore?: string;
+  createdAt?: any;
 }
 
-export interface GoogleCalendarEvent {
-  id: string;
-  summary: string;
-  description?: string;
-  location?: string;
-  start: {
-    dateTime?: string;
-    date?: string;
-  };
-  end?: {
-    dateTime?: string;
-    date?: string;
-  };
-  htmlLink?: string;
-  colorId?: string;
-  status?: string;
-}
-
-// Customization & Theme Types
 export type FontFamilyOption = 
-  | 'Plus Jakarta Sans'
-  | 'Inter'
-  | 'Outfit'
-  | 'DM Sans'
-  | 'Space Grotesk'
-  | 'Playfair Display'
-  | 'JetBrains Mono'
-  | 'Merriweather';
+  | 'Plus Jakarta Sans' 
+  | 'Inter' 
+  | 'Outfit' 
+  | 'DM Sans' 
+  | 'Playfair Display' 
+  | 'JetBrains Mono';
 
-export type BackgroundPatternOption =
-  | 'clean'
-  | 'grid'
-  | 'dots'
-  | 'mesh'
-  | 'paper'
-  | 'gradient'
-  | 'blueprint'
-  | 'dark-obsidian';
+export type BackgroundPatternOption = 'mesh' | 'dots' | 'grid' | 'clean' | 'warm';
 
 export interface ThemeConfig {
-  accentColor: string; // hex or preset id
+  accentColor: string;
   accentName: string;
   fontFamily: FontFamilyOption;
   backgroundPattern: BackgroundPatternOption;
   isDarkMode: boolean;
-  cardRounding: 'subtle' | 'rounded' | 'smooth' | 'full';
+  cardRounding: 'rounded' | 'square' | 'pill';
   compactDensity: boolean;
 }
 
-export const FONT_PRESETS: { id: FontFamilyOption; name: string; category: string; description: string; sample: string }[] = [
-  { id: 'Plus Jakarta Sans', name: 'Plus Jakarta Sans', category: 'Modern Geometric', description: 'Clean, professional & ultra-legible', sample: 'Smart task management' },
-  { id: 'Inter', name: 'Inter', category: 'Neutral Sans', description: 'The gold standard UI typeface', sample: 'Precise grocery lists' },
-  { id: 'Outfit', name: 'Outfit', category: 'Modern Friendly', description: 'Warm, rounded geometric display', sample: 'Today’s daily focus' },
-  { id: 'DM Sans', name: 'DM Sans', category: 'Geometric Sans', description: 'Refined, highly readable at all sizes', sample: 'Collaborate in real time' },
-  { id: 'Space Grotesk', name: 'Space Grotesk', category: 'Tech Monospace Feel', description: 'Bold and tech-forward character', sample: 'Scheduled 3:30 PM' },
-  { id: 'Playfair Display', name: 'Playfair Display', category: 'Editorial Serif', description: 'Elegant, distinguished and premium', sample: 'Artisanal Bakery & Produce' },
-  { id: 'JetBrains Mono', name: 'JetBrains Mono', category: 'Developer Monospace', description: 'Crisp, structured tabular alignment', sample: 'Priority: High · Trader Joes' },
-  { id: 'Merriweather', name: 'Merriweather', category: 'Warm Book Serif', description: 'Gentle on the eyes, literary style', sample: 'Daily journal & errands' }
-];
-
 export const ACCENT_PALETTES = [
-  { id: 'emerald', name: 'Emerald Sage', primary: '#059669', primaryHover: '#047857', light: '#ecfdf5', text: '#065f46', border: '#a7f3d0' },
+  { id: 'emerald', name: 'Emerald Forest', primary: '#059669', primaryHover: '#047857', light: '#ecfdf5', text: '#065f46', border: '#a7f3d0' },
+  { id: 'blue', name: 'Oceanic Blue', primary: '#2563eb', primaryHover: '#1d4ed8', light: '#eff6ff', text: '#1e40af', border: '#bfdbfe' },
   { id: 'indigo', name: 'Royal Indigo', primary: '#4f46e5', primaryHover: '#4338ca', light: '#eef2ff', text: '#3730a3', border: '#c7d2fe' },
-  { id: 'violet', name: 'Velvet Violet', primary: '#7c3aed', primaryHover: '#6d28d9', light: '#f5f3ff', text: '#5b21b6', border: '#ddd6fe' },
+  { id: 'purple', name: 'Deep Violet', primary: '#7c3aed', primaryHover: '#6d28d9', light: '#f5f3ff', text: '#5b21b6', border: '#ddd6fe' },
   { id: 'rose', name: 'Sunset Rose', primary: '#e11d48', primaryHover: '#be123c', light: '#fff1f2', text: '#9f1239', border: '#fecdd3' },
   { id: 'amber', name: 'Warm Amber', primary: '#d97706', primaryHover: '#b45309', light: '#fffbeb', text: '#92400e', border: '#fde68a' },
-  { id: 'sky', name: 'Ocean Cyan', primary: '#0284c7', primaryHover: '#0369a1', light: '#f0f9ff', text: '#075985', border: '#bae6fd' },
-  { id: 'teal', name: 'Nordic Teal', primary: '#0d9488', primaryHover: '#0f766e', light: '#f0fdfa', text: '#115e59', border: '#99f6e4' },
-  { id: 'slate', name: 'Obsidian Minimal', primary: '#334155', primaryHover: '#1e293b', light: '#f8fafc', text: '#0f172a', border: '#cbd5e1' },
+  { id: 'teal', name: 'Teal Oasis', primary: '#0d9488', primaryHover: '#0f766e', light: '#f0fdfa', text: '#115e59', border: '#99f6e4' },
+  { id: 'slate', name: 'Modern Slate', primary: '#475569', primaryHover: '#334155', light: '#f8fafc', text: '#1e293b', border: '#cbd5e1' },
 ];
 
-export const BACKGROUND_PRESETS: { id: BackgroundPatternOption; name: string; previewClass: string; description: string }[] = [
-  { id: 'clean', name: 'Clean Solid Minimal', previewClass: 'bg-slate-50', description: 'Clean off-white canvas with maximum focus' },
-  { id: 'dots', name: 'Polite Dot Matrix', previewClass: 'bg-[radial-gradient(#cbd5e1_1px,transparent_1px)] [background-size:16px_16px] bg-slate-50', description: 'Subtle engineering dot pattern' },
-  { id: 'grid', name: 'Architect Blueprint', previewClass: 'bg-[linear-gradient(to_right,#e2e8f0_1px,transparent_1px),linear-gradient(to_bottom,#e2e8f0_1px,transparent_1px)] bg-[size:24px_24px] bg-slate-50', description: 'Geometric structural grid lines' },
-  { id: 'mesh', name: 'Aurora Mesh Glow', previewClass: 'bg-gradient-to-tr from-slate-50 via-emerald-50/40 to-teal-50/30', description: 'Gentle, modern ambient pastel gradient' },
-  { id: 'paper', name: 'Warm Textured Paper', previewClass: 'bg-[#faf8f5]', description: 'Soft cream tone with high-comfort reading' },
-  { id: 'gradient', name: 'Sunset Horizon Soft', previewClass: 'bg-gradient-to-b from-amber-50/30 via-slate-50 to-rose-50/20', description: 'Warm subtle transitions across sections' },
-  { id: 'dark-obsidian', name: 'Dark Mode Obsidian', previewClass: 'bg-slate-950 text-slate-100', description: 'Deep contrast dark theme for low light' },
+export const FONT_PRESETS: { id: FontFamilyOption; name: string; category: string; description: string; sample: string }[] = [
+  { id: 'Plus Jakarta Sans', name: 'Jakarta (Modern)', category: 'Modern Geometric', description: 'Contemporary high-contrast sans-serif', sample: 'Smart grocery list & daily routines' },
+  { id: 'Outfit', name: 'Outfit (Clean Tech)', category: 'High Legibility', description: 'Clean modern geometric display', sample: 'Smart grocery list & daily routines' },
+  { id: 'DM Sans', name: 'DM Sans (Refined)', category: 'Minimalist Sans', description: 'Geometric precision with soft curves', sample: 'Smart grocery list & daily routines' },
+  { id: 'Inter', name: 'Inter (Functional)', category: 'Universal Screen', description: 'High-density UI clarity', sample: 'Smart grocery list & daily routines' },
+  { id: 'Playfair Display', name: 'Playfair (Editorial)', category: 'Serif Elegance', description: 'Refined editorial serif styling', sample: 'Smart grocery list & daily routines' },
+  { id: 'JetBrains Mono', name: 'JetBrains (Developer)', category: 'Monospaced Code', description: 'Clean structured monospaced layout', sample: 'Smart grocery list & daily routines' },
 ];
 
-export const LIST_COLOR_PALETTES = [
-  { id: 'emerald', label: 'Emerald', bg: 'bg-emerald-500', text: 'text-emerald-700', border: 'border-emerald-300', lightBg: 'bg-emerald-50' },
-  { id: 'indigo', label: 'Indigo', bg: 'bg-indigo-500', text: 'text-indigo-700', border: 'border-indigo-300', lightBg: 'bg-indigo-50' },
-  { id: 'amber', label: 'Amber', bg: 'bg-amber-500', text: 'text-amber-700', border: 'border-amber-300', lightBg: 'bg-amber-50' },
-  { id: 'rose', label: 'Rose', bg: 'bg-rose-500', text: 'text-rose-700', border: 'border-rose-300', lightBg: 'bg-rose-50' },
-  { id: 'violet', label: 'Violet', bg: 'bg-violet-500', text: 'text-violet-700', border: 'border-violet-300', lightBg: 'bg-violet-50' },
-  { id: 'sky', label: 'Sky Blue', bg: 'bg-sky-500', text: 'text-sky-700', border: 'border-sky-300', lightBg: 'bg-sky-50' },
-  { id: 'teal', label: 'Teal', bg: 'bg-teal-500', text: 'text-teal-700', border: 'border-teal-300', lightBg: 'bg-teal-50' },
-  { id: 'orange', label: 'Orange', bg: 'bg-orange-500', text: 'text-orange-700', border: 'border-orange-300', lightBg: 'bg-orange-50' },
+export const BACKGROUND_PRESETS: { id: BackgroundPatternOption; name: string; description: string; previewClass: string }[] = [
+  { id: 'clean', name: 'Pure Minimal', description: 'Clean solid neutral background', previewClass: 'theme-bg-clean' },
+  { id: 'mesh', name: 'Soft Glow Gradient', description: 'Subtle atmospheric multi-color blur', previewClass: 'theme-bg-mesh' },
+  { id: 'dots', name: 'Architectural Dots', description: 'Light dotted coordinate matrix', previewClass: 'theme-bg-dots' },
+  { id: 'grid', name: 'Grid Blueprint', description: 'Structured subtle blueprint grid', previewClass: 'theme-bg-grid' },
+  { id: 'warm', name: 'Warm Paper Texture', description: 'Subtle warm tactile tone', previewClass: 'theme-bg-warm' },
 ];
 
-export const GROCERY_STORES = [
-  'Any',
-  "Trader Joe's",
-  'Costco',
-  'Whole Foods',
-  'Target',
-  'Safeway',
-  'Walmart',
-  'Kroger',
-  'Aldi',
-  'Sprouts',
-  'CVS / Pharmacy',
-  'Home Depot / Hardware',
-  'Local Market',
-  'Other Store'
+export const GROCERY_CATEGORIES = [
+  'Produce',
+  'Dairy & Refrigerated',
+  'Meat & Seafood',
+  'Bakery & Bread',
+  'Pantry & Grains',
+  'Frozen Foods',
+  'Beverages',
+  'Snacks & Sweets',
+  'Deli & Prepared',
+  'Personal Care',
+  'Household & Cleaning',
+  'Pet Care',
+  'Other'
 ] as const;
 
-export type GroceryStore = (typeof GROCERY_STORES)[number];
-export const GROCERY_CATEGORIES = GROCERY_STORES;
-export type GroceryCategory = GroceryStore;
+export type GroceryCategory = typeof GROCERY_CATEGORIES[number];
 
+export const GROCERY_STORES = [
+  { id: 'costco', name: 'Costco', color: 'bg-red-500 text-white' },
+  { id: 'trader_joes', name: "Trader Joe's", color: 'bg-amber-600 text-white' },
+  { id: 'safeway', name: 'Safeway', color: 'bg-rose-600 text-white' },
+  { id: 'target', name: 'Target', color: 'bg-red-600 text-white' },
+  { id: 'whole_foods', name: 'Whole Foods', color: 'bg-emerald-700 text-white' },
+  { id: 'supermarket', name: 'Local Supermarket', color: 'bg-emerald-600 text-white' },
+  { id: 'other', name: 'Other Store', color: 'bg-slate-600 text-white' }
+];
+
+export const LIST_COLOR_PALETTES: Record<string, { bg: string; text: string; border: string; badge: string; ring: string; lightBg: string }> = {
+  emerald: {
+    bg: 'bg-emerald-600',
+    text: 'text-emerald-700 dark:text-emerald-400',
+    border: 'border-emerald-500 dark:border-emerald-600',
+    badge: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
+    ring: 'focus:ring-emerald-500',
+    lightBg: 'bg-emerald-50/50 dark:bg-emerald-950/20'
+  },
+  blue: {
+    bg: 'bg-blue-600',
+    text: 'text-blue-700 dark:text-blue-400',
+    border: 'border-blue-500 dark:border-blue-600',
+    badge: 'bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 border-blue-200 dark:border-blue-800',
+    ring: 'focus:ring-blue-500',
+    lightBg: 'bg-blue-50/50 dark:bg-blue-950/20'
+  },
+  purple: {
+    bg: 'bg-purple-600',
+    text: 'text-purple-700 dark:text-purple-400',
+    border: 'border-purple-500 dark:border-purple-600',
+    badge: 'bg-purple-50 text-purple-700 dark:bg-purple-950/40 dark:text-purple-300 border-purple-200 dark:border-purple-800',
+    ring: 'focus:ring-purple-500',
+    lightBg: 'bg-purple-50/50 dark:bg-purple-950/20'
+  },
+  amber: {
+    bg: 'bg-amber-600',
+    text: 'text-amber-700 dark:text-amber-400',
+    border: 'border-amber-500 dark:border-amber-600',
+    badge: 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 border-amber-200 dark:border-amber-800',
+    ring: 'focus:ring-amber-500',
+    lightBg: 'bg-amber-50/50 dark:bg-amber-950/20'
+  },
+  rose: {
+    bg: 'bg-rose-600',
+    text: 'text-rose-700 dark:text-rose-400',
+    border: 'border-rose-500 dark:border-rose-600',
+    badge: 'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 border-rose-200 dark:border-rose-800',
+    ring: 'focus:ring-rose-500',
+    lightBg: 'bg-rose-50/50 dark:bg-rose-950/20'
+  },
+  teal: {
+    bg: 'bg-teal-600',
+    text: 'text-teal-700 dark:text-teal-400',
+    border: 'border-teal-500 dark:border-teal-600',
+    badge: 'bg-teal-50 text-teal-700 dark:bg-teal-950/40 dark:text-teal-300 border-teal-200 dark:border-teal-800',
+    ring: 'focus:ring-teal-500',
+    lightBg: 'bg-teal-50/50 dark:bg-teal-950/20'
+  },
+  indigo: {
+    bg: 'bg-indigo-600',
+    text: 'text-indigo-700 dark:text-indigo-400',
+    border: 'border-indigo-500 dark:border-indigo-600',
+    badge: 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800',
+    ring: 'focus:ring-indigo-500',
+    lightBg: 'bg-indigo-50/50 dark:bg-indigo-950/20'
+  },
+  slate: {
+    bg: 'bg-slate-700',
+    text: 'text-slate-700 dark:text-slate-400',
+    border: 'border-slate-500 dark:border-slate-600',
+    badge: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-700',
+    ring: 'focus:ring-slate-500',
+    lightBg: 'bg-slate-100/50 dark:bg-slate-800/30'
+  }
+};

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ListModel, GROCERY_STORES } from '../types';
 import { addListItem } from '../services/listService';
+import { isSpecificStore } from '../utils/groceryCategorizer';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { useSpeechRecognition } from '../utils/useSpeechRecognition';
@@ -11,7 +12,9 @@ import {
   MapPin,
   Clock,
   Calendar,
-  FolderOpen
+  FolderOpen,
+  Camera,
+  Sparkles
 } from 'lucide-react';
 
 interface AddToListModalProps {
@@ -20,6 +23,7 @@ interface AddToListModalProps {
   lists: ListModel[];
   defaultListId?: string;
   onItemAdded?: (listId: string, itemId: string) => void;
+  onOpenOcr?: (listId?: string) => void;
 }
 
 export const AddToListModal: React.FC<AddToListModalProps> = ({
@@ -27,7 +31,8 @@ export const AddToListModal: React.FC<AddToListModalProps> = ({
   onClose,
   lists,
   defaultListId,
-  onItemAdded
+  onItemAdded,
+  onOpenOcr
 }) => {
   const { user, userProfile } = useAuth();
   const { activeAccent } = useTheme();
@@ -100,7 +105,7 @@ export const AddToListModal: React.FC<AddToListModalProps> = ({
         displayName: userProfile?.displayName || user?.displayName || 'Keith Fell'
       };
 
-      const cleanWhere = where.trim() || undefined;
+      const cleanWhere = (where.trim() && isSpecificStore(where.trim())) ? where.trim() : undefined;
       const payload = {
         title: what.trim(),
         completed: false,
@@ -194,19 +199,35 @@ export const AddToListModal: React.FC<AddToListModalProps> = ({
                 </span>
                 <span>What</span>
               </label>
-              <button
-                type="button"
-                onClick={() => handleStartVoice('what')}
-                className={`text-[11px] font-semibold px-2 py-0.5 rounded-md flex items-center gap-1 transition ${
-                  isListening && activeVoiceField === 'what'
-                    ? 'bg-rose-500 text-white animate-pulse'
-                    : 'text-slate-400 hover:text-rose-600 hover:bg-slate-100 dark:hover:bg-slate-800'
-                }`}
-                title="Dictate with voice"
-              >
-                <Mic className="w-3 h-3" />
-                <span>{isListening && activeVoiceField === 'what' ? 'Listening...' : 'Voice'}</span>
-              </button>
+              <div className="flex items-center gap-1.5">
+                {onOpenOcr && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      onOpenOcr(selectedListId);
+                    }}
+                    className="text-[11px] font-bold px-2 py-0.5 rounded-md flex items-center gap-1 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/80 transition cursor-pointer"
+                    title="Take photo & OCR scan entire list"
+                  >
+                    <Camera className="w-3 h-3" />
+                    <span>Camera Scan</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => handleStartVoice('what')}
+                  className={`text-[11px] font-semibold px-2 py-0.5 rounded-md flex items-center gap-1 transition ${
+                    isListening && activeVoiceField === 'what'
+                      ? 'bg-rose-500 text-white animate-pulse'
+                      : 'text-slate-400 hover:text-rose-600 hover:bg-slate-100 dark:hover:bg-slate-800'
+                  }`}
+                  title="Dictate with voice"
+                >
+                  <Mic className="w-3 h-3" />
+                  <span>{isListening && activeVoiceField === 'what' ? 'Listening...' : 'Voice'}</span>
+                </button>
+              </div>
             </div>
 
             <input
@@ -262,7 +283,7 @@ export const AddToListModal: React.FC<AddToListModalProps> = ({
             />
             <datalist id="add-location-suggestions">
               {GROCERY_STORES.map((s) => (
-                <option key={s} value={s} />
+                <option key={s.id} value={s.name} />
               ))}
               <option value="Home" />
               <option value="Office" />

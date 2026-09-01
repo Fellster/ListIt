@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useCalendar } from '../context/CalendarContext';
 import { useTheme } from '../context/ThemeContext';
 import { ListModel, ListItemModel } from '../types';
+import { isSpecificStore } from '../utils/groceryCategorizer';
 import { 
   Calendar as CalendarIcon, 
   RefreshCw, 
@@ -282,7 +283,7 @@ export const CalendarAgendaView: React.FC<CalendarAgendaViewProps> = ({
                         </div>
                         <div className="text-[10px] text-slate-400 flex items-center gap-1.5">
                           {item.timeScheduled && <span>⏰ {item.timeScheduled}</span>}
-                          {item.location && <span>📍 {item.location}</span>}
+                          {item.location && isSpecificStore(item.location) && <span>📍 {item.location}</span>}
                         </div>
                       </div>
 

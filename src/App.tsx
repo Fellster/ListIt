@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 import { CalendarProvider } from './context/CalendarContext';
+import { CustomHeadingsProvider, useCustomHeadings } from './context/CustomHeadingsContext';
 import { ListModel, ListItemModel, HeadingKey, getListHeading } from './types';
 import { 
   subscribeUserLists, 
@@ -12,6 +13,7 @@ import {
 } from './services/listService';
 import { Navbar, ActiveNavKey } from './components/Navbar';
 import { TodayView } from './components/TodayView';
+import { HeadingListView } from './components/HeadingListView';
 import { HeadingDirectoryView } from './components/HeadingDirectoryView';
 import { ListCard } from './components/ListCard';
 import { ListView } from './components/ListView';
@@ -23,10 +25,12 @@ import { AddToListModal } from './components/AddToListModal';
 import { ViewListModal } from './components/ViewListModal';
 import { ShareModal } from './components/ShareModal';
 import { AuthModal } from './components/AuthModal';
+import { CameraOcrModal } from './components/CameraOcrModal';
 
 function MainAppContent() {
   const { user, userProfile, loading: authLoading, signInAsDemoUser } = useAuth();
   const { theme, activeAccent } = useTheme();
+  const { customHeadings, removeCustomHeading } = useCustomHeadings();
 
   // Navigation tab: Default to 'today' as requested by user ("The first Page should be a to do list for today")
   const [currentTab, setCurrentTab] = useState<ActiveNavKey>('today');
@@ -43,6 +47,8 @@ function MainAppContent() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isAddToListOpen, setIsAddToListOpen] = useState(false);
   const [isViewListOpen, setIsViewListOpen] = useState(false);
+  const [isOcrOpen, setIsOcrOpen] = useState(false);
+  const [ocrTargetListId, setOcrTargetListId] = useState<string | undefined>(undefined);
   const [addToListTargetId, setAddToListTargetId] = useState<string | undefined>(undefined);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [isThemeOpen, setIsThemeOpen] = useState(false);
@@ -233,8 +239,49 @@ function MainAppContent() {
       updatedAt: new Date()
     };
 
-    setSelectedList(createdList);
+    if (headingKey === 'grocery') {
+      setSelectedList(createdList);
+    } else {
+      setSelectedList(null);
+      setCurrentTab(headingKey);
+    }
   };
+
+  const handleOpenOcr = (targetListId?: string) => {
+    let resolvedId = targetListId;
+    if (!resolvedId) {
+      if (selectedList) {
+        resolvedId = selectedList.id;
+      } else if (currentTab === 'today') {
+        resolvedId = todayLists[0]?.id;
+      } else if (currentTab === 'grocery') {
+        resolvedId = groceryLists[0]?.id;
+      } else if (currentTab === 'home') {
+        resolvedId = homeLists[0]?.id;
+      } else if (currentTab === 'other') {
+        resolvedId = otherLists[0]?.id;
+      } else {
+        const customMatch = lists.find((l) => getListHeading(l) === currentTab);
+        if (customMatch) resolvedId = customMatch.id;
+      }
+    }
+    setOcrTargetListId(resolvedId || lists[0]?.id);
+    setIsOcrOpen(true);
+  };
+
+  const handleDeleteCustomHeading = (headingId: string) => {
+    removeCustomHeading(headingId);
+    if (currentTab === headingId) {
+      setCurrentTab('other');
+    }
+  };
+
+  // Get active custom heading if currently viewing one
+  const activeCustomHeading = customHeadings.find((h) => h.id === currentTab);
+  const currentCustomHeadingLists = useMemo(() => {
+    if (!activeCustomHeading) return [];
+    return lists.filter((l) => getListHeading(l) === activeCustomHeading.id);
+  }, [lists, activeCustomHeading]);
 
   return (
     <div 
@@ -243,13 +290,14 @@ function MainAppContent() {
       }`}
       style={{ fontFamily: theme.fontFamily }}
     >
-      {/* Top Navbar with 5 buttons top line & new list second line */}
+      {/* Top Navbar with dynamic headings top line & new list second line */}
       <Navbar
         activeNav={activeNav}
         onNavigate={handleNavigate}
         onQuickCreateList={handleQuickCreateList}
         onOpenAuth={() => setIsAuthOpen(true)}
         onOpenThemeModal={() => setIsThemeOpen(true)}
+        onOpenOcr={() => handleOpenOcr(selectedList?.id)}
       />
 
       {/* Main Content Router */}
@@ -264,20 +312,19 @@ function MainAppContent() {
             window.history.replaceState({}, '', url.toString());
           }}
           onOpenShare={(list) => setShareTargetList(list)}
+          onOpenOcr={(listId) => handleOpenOcr(listId)}
         />
       ) : currentTab === 'today' ? (
         /* FIRST PAGE: To-Do List For Today */
-        <TodayView
-          lists={lists}
-          allTodayItems={allTodayItems}
+        <HeadingListView
+          heading="today"
+          lists={todayLists}
+          allLists={lists}
+          listItemsMap={listItemsMap}
           onSelectItem={(item, list) => setInspectingItem({ item, list })}
           onOpenList={(list) => setSelectedList(list)}
-          onOpenCreateList={() => setIsCreateOpen(true)}
-          onOpenAddToList={(defaultListId) => {
-            setAddToListTargetId(defaultListId);
-            setIsAddToListOpen(true);
-          }}
-          onOpenViewList={() => setIsViewListOpen(true)}
+          onCreateList={(title, heading) => handleQuickCreateList(title, heading)}
+          onOpenOcr={(listId) => handleOpenOcr(listId)}
         />
       ) : currentTab === 'grocery' ? (
         /* GROCERY LISTS DIRECTORY */
@@ -295,47 +342,57 @@ function MainAppContent() {
           onSelectItem={(item, l) => setInspectingItem({ item, list: l })}
           onOpenShare={(l) => setShareTargetList(l)}
           onCreateList={(title, heading) => handleQuickCreateList(title, heading)}
+          onOpenOcr={(listId) => handleOpenOcr(listId)}
         />
       ) : currentTab === 'home' ? (
-        /* HOME LISTS DIRECTORY */
-        <HeadingDirectoryView
+        /* HOME LIST: Same look and work as under Today */
+        <HeadingListView
           heading="home"
           lists={homeLists}
           allLists={lists}
-          loading={loadingLists}
-          onSelectList={(l) => {
-            setSelectedList(l);
-            const url = new URL(window.location.href);
-            url.searchParams.set('listId', l.id);
-            window.history.pushState({}, '', url.toString());
-          }}
-          onSelectItem={(item, l) => setInspectingItem({ item, list: l })}
-          onOpenShare={(l) => setShareTargetList(l)}
+          listItemsMap={listItemsMap}
+          onSelectItem={(item, list) => setInspectingItem({ item, list })}
+          onOpenList={(list) => setSelectedList(list)}
           onCreateList={(title, heading) => handleQuickCreateList(title, heading)}
+          onOpenOcr={(listId) => handleOpenOcr(listId)}
         />
       ) : currentTab === 'other' ? (
-        /* OTHER LISTS DIRECTORY */
-        <HeadingDirectoryView
+        /* OTHER LIST: Same look and work as under Today */
+        <HeadingListView
           heading="other"
           lists={otherLists}
           allLists={lists}
-          loading={loadingLists}
-          onSelectList={(l) => {
-            setSelectedList(l);
-            const url = new URL(window.location.href);
-            url.searchParams.set('listId', l.id);
-            window.history.pushState({}, '', url.toString());
-          }}
-          onSelectItem={(item, l) => setInspectingItem({ item, list: l })}
-          onOpenShare={(l) => setShareTargetList(l)}
+          listItemsMap={listItemsMap}
+          onSelectItem={(item, list) => setInspectingItem({ item, list })}
+          onOpenList={(list) => setSelectedList(list)}
           onCreateList={(title, heading) => handleQuickCreateList(title, heading)}
+          onOpenOcr={(listId) => handleOpenOcr(listId)}
+        />
+      ) : activeCustomHeading ? (
+        /* CUSTOM HEADING LIST: Same look and work as under Today */
+        <HeadingListView
+          heading={activeCustomHeading.id}
+          headingLabel={activeCustomHeading.label}
+          lists={currentCustomHeadingLists}
+          allLists={lists}
+          listItemsMap={listItemsMap}
+          onSelectItem={(item, list) => setInspectingItem({ item, list })}
+          onOpenList={(list) => setSelectedList(list)}
+          onDeleteCustomHeading={handleDeleteCustomHeading}
+          onCreateList={(title, heading) => handleQuickCreateList(title, heading)}
+          onOpenOcr={(listId) => handleOpenOcr(listId)}
         />
       ) : (
-        /* GOOGLE CALENDAR TIME-BLOCKED SCHEDULE VIEW */
-        <CalendarAgendaView
-          lists={lists}
-          allTodayItems={allTodayItems}
-          onOpenItemModal={(item, list) => setInspectingItem({ item, list })}
+        /* Fallback to Other List */
+        <HeadingListView
+          heading="other"
+          lists={otherLists}
+          allLists={lists}
+          listItemsMap={listItemsMap}
+          onSelectItem={(item, list) => setInspectingItem({ item, list })}
+          onOpenList={(list) => setSelectedList(list)}
+          onCreateList={(title, heading) => handleQuickCreateList(title, heading)}
+          onOpenOcr={(listId) => handleOpenOcr(listId)}
         />
       )}
 
@@ -373,6 +430,20 @@ function MainAppContent() {
         onClose={() => setIsAddToListOpen(false)}
         lists={lists}
         defaultListId={addToListTargetId}
+        onOpenOcr={(defaultListId) => handleOpenOcr(defaultListId)}
+      />
+
+      {/* Camera OCR Scanner Modal */}
+      <CameraOcrModal
+        isOpen={isOcrOpen}
+        onClose={() => setIsOcrOpen(false)}
+        lists={lists}
+        defaultListId={ocrTargetListId || selectedList?.id}
+        onSuccess={(count, targetList) => {
+          if (selectedList?.id !== targetList.id) {
+            setSelectedList(targetList);
+          }
+        }}
       />
 
       {/* View List Modal */}
@@ -413,7 +484,9 @@ export default function App() {
     <AuthProvider>
       <ThemeProvider>
         <CalendarProvider>
-          <MainAppContent />
+          <CustomHeadingsProvider>
+            <MainAppContent />
+          </CustomHeadingsProvider>
         </CalendarProvider>
       </ThemeProvider>
     </AuthProvider>

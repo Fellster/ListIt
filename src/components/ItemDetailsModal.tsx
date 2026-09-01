@@ -8,6 +8,7 @@ import {
   subscribeUserLists,
   getLocalLists 
 } from '../services/listService';
+import { isSpecificStore } from '../utils/groceryCategorizer';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { useSpeechRecognition } from '../utils/useSpeechRecognition';
@@ -83,9 +84,10 @@ const ItemDetailsModalContent: React.FC<ItemDetailsModalContentProps> = ({
   const [what, setWhat] = useState(item.title || '');
   
   // 2. Where
-  const [where, setWhere] = useState(
-    item.location || item.store || item.category || ''
-  );
+  const [where, setWhere] = useState(() => {
+    const raw = item.location || item.store || item.category || '';
+    return isSpecificStore(raw) ? raw : '';
+  });
 
   // 3. When
   const [whenDate, setWhenDate] = useState(item.dueDate || '');
@@ -260,7 +262,7 @@ const ItemDetailsModalContent: React.FC<ItemDetailsModalContentProps> = ({
 
       const todayStr = new Date().toISOString().split('T')[0];
       const isMovingToToday = heading === 'today';
-      const cleanWhere = where.trim() || undefined;
+      const cleanWhere = (where.trim() && isSpecificStore(where.trim())) ? where.trim() : undefined;
 
       // When moving out of the today heading to another heading (e.g. Grocery, Home, Other):
       // - isForToday becomes false
@@ -527,7 +529,7 @@ const ItemDetailsModalContent: React.FC<ItemDetailsModalContentProps> = ({
               />
               <datalist id="location-store-suggestions">
                 {GROCERY_STORES.map((storeOption) => (
-                  <option key={storeOption} value={storeOption} />
+                  <option key={storeOption.id} value={storeOption.name} />
                 ))}
                 <option value="Home" />
                 <option value="Office" />

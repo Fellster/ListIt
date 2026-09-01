@@ -59,11 +59,26 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     root.style.setProperty('--accent-text', activeAccent.text);
     root.style.setProperty('--accent-border', activeAccent.border);
 
-    // Apply Dark mode class if active
+    // Apply Dark mode class and background pattern to body and html
+    const allBgClasses = ['theme-bg-clean', 'theme-bg-mesh', 'theme-bg-dots', 'theme-bg-grid', 'theme-bg-warm'];
+    document.body.classList.remove(...allBgClasses);
+    root.classList.remove(...allBgClasses);
+
+    const activeBgClass = `theme-bg-${theme.backgroundPattern || 'mesh'}`;
+    document.body.classList.add(activeBgClass);
+    root.classList.add(activeBgClass);
+
+    root.setAttribute('data-theme-bg', theme.backgroundPattern || 'mesh');
+    root.setAttribute('data-theme-dark', String(theme.isDarkMode));
+
     if (theme.isDarkMode) {
-      document.body.classList.add('dark', 'bg-slate-950', 'text-slate-100');
+      document.body.classList.add('dark', 'text-slate-100');
+      root.classList.add('dark');
+      document.body.classList.remove('text-slate-900');
     } else {
-      document.body.classList.remove('dark', 'bg-slate-950', 'text-slate-100');
+      document.body.classList.remove('dark', 'text-slate-100');
+      root.classList.remove('dark');
+      document.body.classList.add('text-slate-900');
     }
   }, [theme, activeAccent]);
 
