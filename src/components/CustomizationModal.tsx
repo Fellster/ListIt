@@ -78,7 +78,7 @@ export const CustomizationModal: React.FC<CustomizationModalProps> = ({ isOpen, 
           {/* Live Preview Box */}
           <div 
             className={`p-4 rounded-2xl border border-slate-200/80 dark:border-slate-700/80 transition-all ${
-              BACKGROUND_PRESETS.find((b) => b.id === theme.backgroundPattern)?.previewClass || 'bg-slate-50'
+              BACKGROUND_PRESETS.find((b) => b.id === theme.backgroundPattern)?.previewClass || 'theme-bg-clean'
             }`}
           >
             <div className="flex items-center justify-between mb-2">

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useAuth, getAvatarColor, getInitials } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { useCustomHeadings } from '../context/CustomHeadingsContext';
@@ -21,7 +22,8 @@ import {
   Check,
   X,
   Sparkles,
-  Trash2
+  Trash2,
+  Mail
 } from 'lucide-react';
 import { HeadingKey, CustomHeading } from '../types';
 
@@ -34,6 +36,8 @@ interface NavbarProps {
   onOpenAuth: () => void;
   onOpenThemeModal: () => void;
   onOpenOcr?: () => void;
+  pendingInvitationsCount?: number;
+  onOpenInvitations?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({ 
@@ -42,7 +46,9 @@ export const Navbar: React.FC<NavbarProps> = ({
   onQuickCreateList,
   onOpenAuth,
   onOpenThemeModal,
-  onOpenOcr
+  onOpenOcr,
+  pendingInvitationsCount = 0,
+  onOpenInvitations
 }) => {
   const { user, userProfile, logout, signInAsDemoUser } = useAuth();
   const { theme, updateTheme, activeAccent } = useTheme();
@@ -54,8 +60,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   const [isAddHeadingModalOpen, setIsAddHeadingModalOpen] = useState(false);
   const [headingToDelete, setHeadingToDelete] = useState<CustomHeading | null>(null);
 
-  const currentEmail = userProfile?.email || user?.email || '';
-  const currentName = userProfile?.displayName || user?.displayName || 'Keith Fell';
+  const currentEmail = (userProfile?.email || user?.email || '').toLowerCase().trim();
+  const currentName = userProfile?.displayName || user?.displayName || (currentEmail ? currentEmail.split('@')[0] : 'User');
 
   const getHeadingLabel = (navKey: ActiveNavKey) => {
     switch (navKey) {
@@ -63,10 +69,6 @@ export const Navbar: React.FC<NavbarProps> = ({
         return 'Today';
       case 'grocery':
         return 'Grocery';
-      case 'home':
-        return 'Home';
-      case 'other':
-        return 'Other';
       default: {
         const found = customHeadings.find((h) => h.id === navKey);
         return found ? found.label : typeof navKey === 'string' ? navKey : 'Custom';
@@ -93,7 +95,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   const handleHeadingDeleted = (deletedHeadingId: string) => {
     if (activeNav === deletedHeadingId) {
-      onNavigate('other');
+      onNavigate('today');
     }
   };
 
@@ -121,6 +123,29 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {/* Action buttons & Profile Menu */}
         <div className="flex items-center gap-2 sm:gap-3">
+          {/* Invitations Button */}
+          {onOpenInvitations && (
+            <button
+              type="button"
+              id="nav-btn-invitations"
+              onClick={onOpenInvitations}
+              className={`relative p-2 sm:px-3 sm:py-1.5 text-xs font-bold rounded-xl transition flex items-center gap-1.5 border shadow-2xs ${
+                pendingInvitationsCount > 0
+                  ? 'bg-emerald-50 text-emerald-800 border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-700'
+                  : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border-slate-200/70 dark:border-slate-700'
+              }`}
+              title="View Pending Invitations"
+            >
+              <Mail className={`w-4 h-4 ${pendingInvitationsCount > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400'}`} />
+              <span className="hidden sm:inline">Invitations</span>
+              {pendingInvitationsCount > 0 && (
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-600 text-white text-[10px] font-extrabold animate-pulse">
+                  {pendingInvitationsCount}
+                </span>
+              )}
+            </button>
+          )}
+
           {/* Customization / Theme Studio Button */}
           <button
             type="button"
@@ -190,20 +215,20 @@ export const Navbar: React.FC<NavbarProps> = ({
                       
                       <button
                         type="button"
-                        onClick={() => handleSwitchDemo('Keith Fell', 'keithfell1@gmail.com')}
+                        onClick={() => handleSwitchDemo('Alex Rivera', 'alex.owner@example.com')}
                         className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs flex items-center justify-between ${
-                          currentEmail === 'keithfell1@gmail.com'
+                          currentEmail === 'alex.owner@example.com'
                             ? 'bg-slate-100 dark:bg-slate-800 font-bold text-slate-900 dark:text-white'
                             : 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/50'
                         }`}
                       >
                         <div className="flex items-center gap-2">
-                          <div className={`w-5 h-5 rounded-full flex items-center justify-center text-white text-[10px] ${getAvatarColor('keithfell1@gmail.com')}`}>
-                            KF
+                          <div className={`w-5 h-5 rounded-full flex items-center justify-center text-white text-[10px] ${getAvatarColor('alex.owner@example.com')}`}>
+                            AR
                           </div>
-                          <span>Keith Fell</span>
+                          <span>Alex Rivera</span>
                         </div>
-                        {currentEmail === 'keithfell1@gmail.com' && (
+                        {currentEmail === 'alex.owner@example.com' && (
                           <Check className="w-3.5 h-3.5" style={{ color: activeAccent.primary }} />
                         )}
                       </button>
@@ -250,6 +275,27 @@ export const Navbar: React.FC<NavbarProps> = ({
                     </div>
 
                     <div className="border-t border-slate-100 dark:border-slate-800 mt-1 pt-1 px-1">
+                      {onOpenInvitations && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setProfileMenuOpen(false);
+                            onOpenInvitations();
+                          }}
+                          className="w-full text-left px-3 py-1.5 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg flex items-center justify-between"
+                        >
+                          <div className="flex items-center gap-2">
+                            <Mail className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                            <span>List Invitations</span>
+                          </div>
+                          {pendingInvitationsCount > 0 && (
+                            <span className="px-1.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 text-[10px] font-bold">
+                              {pendingInvitationsCount}
+                            </span>
+                          )}
+                        </button>
+                      )}
+
                       <button
                         type="button"
                         onClick={() => {
@@ -292,7 +338,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
       </div>
 
-      {/* TOP LINE: Dynamic Headings (Today, Grocery, Home, Other, Custom Headings... + Plus Button) */}
+      {/* TOP LINE: Dynamic Headings (Today, Grocery, Custom Headings... + Plus Button) */}
       <div className="border-t border-slate-200/80 dark:border-slate-800 bg-slate-100/70 dark:bg-slate-900/90 px-3 sm:px-6 py-2">
         <div className="max-w-7xl mx-auto flex items-center gap-1.5 sm:gap-2.5 overflow-x-auto no-scrollbar py-0.5">
           {/* 1. Today */}
@@ -323,36 +369,6 @@ export const Navbar: React.FC<NavbarProps> = ({
             style={activeNav === 'grocery' ? { borderColor: activeAccent.primary } : {}}
           >
             <span>Grocery</span>
-          </button>
-
-          {/* 3. Home */}
-          <button
-            type="button"
-            id="nav-btn-home"
-            onClick={() => onNavigate('home')}
-            className={`flex-1 min-w-[70px] sm:min-w-[90px] h-10 px-3 sm:px-4 rounded-xl text-xs sm:text-sm font-bold transition flex items-center justify-center whitespace-nowrap shadow-2xs cursor-pointer shrink-0 ${
-              activeNav === 'home'
-                ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white border-2 shadow-xs'
-                : 'bg-white/80 dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-700'
-            }`}
-            style={activeNav === 'home' ? { borderColor: activeAccent.primary } : {}}
-          >
-            <span>Home</span>
-          </button>
-
-          {/* 4. Other */}
-          <button
-            type="button"
-            id="nav-btn-other"
-            onClick={() => onNavigate('other')}
-            className={`flex-1 min-w-[70px] sm:min-w-[90px] h-10 px-3 sm:px-4 rounded-xl text-xs sm:text-sm font-bold transition flex items-center justify-center whitespace-nowrap shadow-2xs cursor-pointer shrink-0 ${
-              activeNav === 'other'
-                ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white border-2 shadow-xs'
-                : 'bg-white/80 dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-700'
-            }`}
-            style={activeNav === 'other' ? { borderColor: activeAccent.primary } : {}}
-          >
-            <span>Other</span>
           </button>
 
           {/* Custom Headings created by user */}
@@ -394,16 +410,16 @@ export const Navbar: React.FC<NavbarProps> = ({
             );
           })}
 
-          {/* + Button to Add Custom Named Heading - Positioned directly AFTER the last custom button */}
+          {/* + Button to Add Custom List - Positioned directly AFTER the last custom button */}
           <button
             type="button"
             id="nav-btn-add-custom-heading"
             onClick={() => setIsAddHeadingModalOpen(true)}
             className="h-10 px-3 min-w-[40px] bg-white/80 hover:bg-white dark:bg-slate-800/80 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 hover:text-emerald-600 dark:hover:text-emerald-400 border border-dashed border-slate-300 dark:border-slate-600 hover:border-emerald-500 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 shrink-0 shadow-2xs cursor-pointer"
-            title="Add custom heading button (e.g. Work, Fitness, Packing, Projects)"
+            title="Add new list (i.e. Work, Home, Travel, TV, Projects...)"
           >
             <Plus className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-            <span className="hidden sm:inline text-xs">Heading</span>
+            <span className="hidden sm:inline text-xs">List</span>
           </button>
         </div>
       </div>
@@ -433,9 +449,9 @@ export const Navbar: React.FC<NavbarProps> = ({
       />
 
       {/* Quick Delete Heading Button Confirmation Modal */}
-      {headingToDelete && (
+      {headingToDelete && createPortal(
         <div 
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs animate-in fade-in duration-150"
+          className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs animate-in fade-in duration-150"
           onClick={() => setHeadingToDelete(null)}
         >
           <div 
@@ -451,7 +467,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   Delete "{headingToDelete.label}" list?
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                  This will remove this list button from your navigation. Any existing lists will remain safely organized in "Other".
+                  This will remove this list button from your navigation. Any existing lists will remain safely organized in "Today".
                 </p>
               </div>
             </div>
@@ -479,7 +495,8 @@ export const Navbar: React.FC<NavbarProps> = ({
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </header>
   );

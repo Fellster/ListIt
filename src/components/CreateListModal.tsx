@@ -108,9 +108,9 @@ export const CreateListModal: React.FC<CreateListModalProps> = ({ isOpen, onClos
     setLoading(true);
 
     try {
-      const activeUid = user?.uid || userProfile?.uid || 'user_keithfell1_gmail_com';
-      const activeEmail = (userProfile?.email || user?.email || 'keithfell1@gmail.com').toLowerCase();
-      const activeDisplayName = userProfile?.displayName || user?.displayName || 'Keith Fell';
+      const activeUid = user?.uid || userProfile?.uid || '';
+      const activeEmail = (userProfile?.email || user?.email || '').toLowerCase().trim();
+      const activeDisplayName = userProfile?.displayName || user?.displayName || 'User';
 
       const listId = await createList(
         {
@@ -145,9 +145,9 @@ export const CreateListModal: React.FC<CreateListModalProps> = ({ isOpen, onClos
     setLoading(true);
 
     try {
-      const activeUid = user?.uid || userProfile?.uid || 'user_keithfell1_gmail_com';
-      const activeEmail = (userProfile?.email || user?.email || 'keithfell1@gmail.com').toLowerCase();
-      const activeDisplayName = userProfile?.displayName || user?.displayName || 'Keith Fell';
+      const activeUid = user?.uid || userProfile?.uid || '';
+      const activeEmail = (userProfile?.email || user?.email || '').toLowerCase().trim();
+      const activeDisplayName = userProfile?.displayName || user?.displayName || 'User';
 
       const listId = await createList(
         {
@@ -176,8 +176,8 @@ export const CreateListModal: React.FC<CreateListModalProps> = ({ isOpen, onClos
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-      <div className="relative w-full max-w-lg bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-100 dark:border-slate-800 overflow-hidden animate-in fade-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
+    <div className="fixed inset-0 z-50 overflow-y-auto p-4 sm:p-6 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center">
+      <div className="relative w-full max-w-lg bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-100 dark:border-slate-800 overflow-hidden animate-in fade-in zoom-in-95 duration-200 flex flex-col max-h-[calc(100dvh-2rem)] my-auto">
         {/* Header */}
         <div 
           className="p-5 text-white flex items-center justify-between"

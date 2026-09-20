@@ -11,6 +11,7 @@ import {
 import { isSpecificStore } from '../utils/groceryCategorizer';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
+import { useCustomHeadings } from '../context/CustomHeadingsContext';
 import { useSpeechRecognition } from '../utils/useSpeechRecognition';
 import { 
   X, 
@@ -25,11 +26,11 @@ import {
   ArrowRightLeft,
   CalendarCheck,
   ShoppingCart,
-  Home,
-  FolderOpen,
+  Folder,
   ArrowRight,
   Check,
-  Sparkles
+  Sparkles,
+  FileText
 } from 'lucide-react';
 
 interface ItemDetailsModalProps {
@@ -49,8 +50,6 @@ interface ItemDetailsModalContentProps {
   lists?: ListModel[];
 }
 
-type DestinationHeading = 'today' | 'grocery' | 'home' | 'other';
-
 const ItemDetailsModalContent: React.FC<ItemDetailsModalContentProps> = ({
   list,
   item,
@@ -60,6 +59,7 @@ const ItemDetailsModalContent: React.FC<ItemDetailsModalContentProps> = ({
 }) => {
   const { userProfile, user } = useAuth();
   const { activeAccent } = useTheme();
+  const { customHeadings } = useCustomHeadings();
 
   // All available lists
   const [allLists, setAllLists] = useState<ListModel[]>(() => {
@@ -72,8 +72,8 @@ const ItemDetailsModalContent: React.FC<ItemDetailsModalContentProps> = ({
       setAllLists(providedLists);
       return;
     }
-    const currentUserId = user?.uid || userProfile?.uid || 'user_keithfell1_gmail_com';
-    const currentUserEmail = (userProfile?.email || user?.email || 'keithfell1@gmail.com').toLowerCase();
+    const currentUserId = user?.uid || userProfile?.uid || '';
+    const currentUserEmail = (userProfile?.email || user?.email || '').toLowerCase().trim();
     const unsubscribe = subscribeUserLists(currentUserId, currentUserEmail, (fetched) => {
       setAllLists(fetched);
     });
@@ -82,6 +82,9 @@ const ItemDetailsModalContent: React.FC<ItemDetailsModalContentProps> = ({
 
   // 1. What
   const [what, setWhat] = useState(item.title || '');
+
+  // Notes & Details
+  const [notes, setNotes] = useState(item.notes || '');
   
   // 2. Where
   const [where, setWhere] = useState(() => {
@@ -95,53 +98,54 @@ const ItemDetailsModalContent: React.FC<ItemDetailsModalContentProps> = ({
 
   // Move Task To Destination Heading & Sub-list
   const currentHeading = getListHeading(list);
-  const [targetHeading, setTargetHeading] = useState<DestinationHeading>(currentHeading);
+  const [targetHeading, setTargetHeading] = useState<string>(currentHeading);
 
-  // Lists categorized by heading
-  const todayLists = useMemo(() => allLists.filter((l) => getListHeading(l) === 'today'), [allLists]);
-  const groceryLists = useMemo(() => allLists.filter((l) => getListHeading(l) === 'grocery'), [allLists]);
-  const homeLists = useMemo(() => allLists.filter((l) => getListHeading(l) === 'home'), [allLists]);
-  const otherLists = useMemo(() => allLists.filter((l) => getListHeading(l) === 'other'), [allLists]);
+  // Available heading options: Today, Grocery, and any custom headings created by user
+  const headingOptions = useMemo(() => {
+    const opts: Array<{ id: string; label: string; iconType: 'today' | 'grocery' | 'custom' }> = [
+      { id: 'today', label: 'Today', iconType: 'today' },
+      { id: 'grocery', label: 'Grocery', iconType: 'grocery' },
+    ];
+    customHeadings.forEach((ch) => {
+      opts.push({ id: ch.id, label: ch.label, iconType: 'custom' });
+    });
+    if (currentHeading && !opts.some((o) => o.id === currentHeading)) {
+      opts.push({ 
+        id: currentHeading, 
+        label: currentHeading.charAt(0).toUpperCase() + currentHeading.slice(1), 
+        iconType: 'custom' 
+      });
+    }
+    return opts;
+  }, [customHeadings, currentHeading]);
 
-  const [selectedTodayListId, setSelectedTodayListId] = useState<string>(() => {
-    if (currentHeading === 'today') return list.id;
-    return todayLists[0]?.id || '';
+  // Selected sub-list under target heading
+  const [selectedSubListId, setSelectedSubListId] = useState<string>(() => {
+    return item.listId || list.id;
   });
 
-  const [selectedGroceryListId, setSelectedGroceryListId] = useState<string>(() => {
-    if (currentHeading === 'grocery') return list.id;
-    return groceryLists[0]?.id || '';
-  });
+  // Lists matching target heading
+  const targetHeadingLists = useMemo(() => {
+    return allLists.filter((l) => getListHeading(l) === targetHeading);
+  }, [allLists, targetHeading]);
 
-  const [selectedHomeListId, setSelectedHomeListId] = useState<string>(() => {
-    if (currentHeading === 'home') return list.id;
-    return homeLists[0]?.id || '';
-  });
-
-  const [selectedOtherListId, setSelectedOtherListId] = useState<string>(() => {
-    if (currentHeading === 'other') return list.id;
-    return otherLists[0]?.id || '';
-  });
-
-  // Keep selections synced
+  // Keep target sub-list synced when target heading or list items change
   useEffect(() => {
-    if (todayLists.length > 0 && !todayLists.some((l) => l.id === selectedTodayListId)) {
-      setSelectedTodayListId(todayLists[0].id);
+    const listsForHeading = allLists.filter((l) => getListHeading(l) === targetHeading);
+    if (targetHeading === currentHeading) {
+      setSelectedSubListId(item.listId || list.id);
+    } else if (listsForHeading.length > 0) {
+      if (!listsForHeading.some((l) => l.id === selectedSubListId)) {
+        setSelectedSubListId(listsForHeading[0].id);
+      }
+    } else {
+      setSelectedSubListId('');
     }
-    if (groceryLists.length > 0 && !groceryLists.some((l) => l.id === selectedGroceryListId)) {
-      setSelectedGroceryListId(groceryLists[0].id);
-    }
-    if (homeLists.length > 0 && !homeLists.some((l) => l.id === selectedHomeListId)) {
-      setSelectedHomeListId(homeLists[0].id);
-    }
-    if (otherLists.length > 0 && !otherLists.some((l) => l.id === selectedOtherListId)) {
-      setSelectedOtherListId(otherLists[0].id);
-    }
-  }, [todayLists, groceryLists, homeLists, otherLists, selectedTodayListId, selectedGroceryListId, selectedHomeListId, selectedOtherListId]);
+  }, [targetHeading, allLists, currentHeading, list.id, item.listId]);
 
   const [loading, setLoading] = useState(false);
   const [moveStatus, setMoveStatus] = useState<string | null>(null);
-  const [activeVoiceField, setActiveVoiceField] = useState<'what' | 'where' | 'whenTime' | null>(null);
+  const [activeVoiceField, setActiveVoiceField] = useState<'what' | 'notes' | 'where' | 'whenTime' | null>(null);
 
   const {
     isListening,
@@ -150,6 +154,8 @@ const ItemDetailsModalContent: React.FC<ItemDetailsModalContentProps> = ({
   } = useSpeechRecognition((finalText) => {
     if (activeVoiceField === 'what') {
       setWhat(finalText);
+    } else if (activeVoiceField === 'notes') {
+      setNotes(finalText);
     } else if (activeVoiceField === 'where') {
       setWhere(finalText);
     } else if (activeVoiceField === 'whenTime') {
@@ -158,7 +164,7 @@ const ItemDetailsModalContent: React.FC<ItemDetailsModalContentProps> = ({
     setActiveVoiceField(null);
   });
 
-  const handleStartVoice = (field: 'what' | 'where' | 'whenTime') => {
+  const handleStartVoice = (field: 'what' | 'notes' | 'where' | 'whenTime') => {
     if (!canEdit) return;
     if (isListening && activeVoiceField === field) {
       stopListening();
@@ -171,21 +177,22 @@ const ItemDetailsModalContent: React.FC<ItemDetailsModalContentProps> = ({
 
   // Helper to resolve destination targetListId and targetListName
   const resolveTargetList = async (
-    heading: DestinationHeading,
+    heading: string,
     chosenSubListId?: string
   ): Promise<{ targetListId: string; targetListName: string }> => {
     const userMeta = {
-      uid: user?.uid || userProfile?.uid || 'user_keithfell1_gmail_com',
-      email: (userProfile?.email || user?.email || 'keithfell1@gmail.com').toLowerCase(),
-      displayName: userProfile?.displayName || user?.displayName || 'Keith Fell',
+      uid: user?.uid || userProfile?.uid || '',
+      email: (userProfile?.email || user?.email || '').toLowerCase().trim(),
+      displayName: userProfile?.displayName || user?.displayName || 'User',
     };
 
+    const headingLists = allLists.filter((l) => getListHeading(l) === heading);
+    const explicitId = chosenSubListId || selectedSubListId;
+    const matched = headingLists.find((l) => l.id === explicitId);
+    if (matched) return { targetListId: matched.id, targetListName: matched.title };
+    if (headingLists.length > 0) return { targetListId: headingLists[0].id, targetListName: headingLists[0].title };
+
     if (heading === 'today') {
-      const explicitId = chosenSubListId || selectedTodayListId;
-      const matched = todayLists.find((l) => l.id === explicitId);
-      if (matched) return { targetListId: matched.id, targetListName: matched.title };
-      if (todayLists.length > 0) return { targetListId: todayLists[0].id, targetListName: todayLists[0].title };
-      
       const newId = await createList({
         title: "Today",
         description: "Daily reminders and tasks to do today",
@@ -198,11 +205,6 @@ const ItemDetailsModalContent: React.FC<ItemDetailsModalContentProps> = ({
     }
 
     if (heading === 'grocery') {
-      const explicitId = chosenSubListId || selectedGroceryListId;
-      const matched = groceryLists.find((l) => l.id === explicitId);
-      if (matched) return { targetListId: matched.id, targetListName: matched.title };
-      if (groceryLists.length > 0) return { targetListId: groceryLists[0].id, targetListName: groceryLists[0].title };
-
       const newId = await createList({
         title: "Grocery List",
         description: "Shopping list tagged by store",
@@ -214,38 +216,21 @@ const ItemDetailsModalContent: React.FC<ItemDetailsModalContentProps> = ({
       return { targetListId: newId, targetListName: "Grocery List" };
     }
 
-    if (heading === 'home') {
-      const explicitId = chosenSubListId || selectedHomeListId;
-      const matched = homeLists.find((l) => l.id === explicitId);
-      if (matched) return { targetListId: matched.id, targetListName: matched.title };
-      if (homeLists.length > 0) return { targetListId: homeLists[0].id, targetListName: homeLists[0].title };
-
-      const newId = await createList({
-        title: "Home",
-        description: "Household chores, repairs, organization, and home maintenance",
-        type: 'todo',
-        heading: 'home',
-        color: 'amber',
-        icon: 'home'
-      }, userMeta);
-      return { targetListId: newId, targetListName: "Home" };
-    }
-
-    // Heading is 'other'
-    const explicitId = chosenSubListId || selectedOtherListId;
-    const matched = otherLists.find((l) => l.id === explicitId);
-    if (matched) {
-      return { targetListId: matched.id, targetListName: matched.title };
-    }
-    if (otherLists.length > 0) {
-      return { targetListId: otherLists[0].id, targetListName: otherLists[0].title };
-    }
-
-    return { targetListId: list.id, targetListName: list.title };
+    // Custom heading created by user
+    const customMatch = customHeadings.find((h) => h.id === heading);
+    const headingLabel = customMatch ? customMatch.label : (heading.charAt(0).toUpperCase() + heading.slice(1));
+    const newId = await createList({
+      title: headingLabel,
+      type: 'todo',
+      heading: heading,
+      color: 'indigo',
+      icon: 'list'
+    }, userMeta);
+    return { targetListId: newId, targetListName: headingLabel };
   };
 
   // Helper to execute move or save
-  const executeMoveOrSave = async (heading: DestinationHeading, chosenSubListId?: string) => {
+  const executeMoveOrSave = async (heading: string, chosenSubListId?: string) => {
     if (!canEdit) return;
     if (isListening) stopListening();
     if (!what.trim()) return;
@@ -255,16 +240,16 @@ const ItemDetailsModalContent: React.FC<ItemDetailsModalContentProps> = ({
 
     try {
       const userMeta = {
-        uid: user?.uid || userProfile?.uid || 'user_keithfell1_gmail_com',
-        email: (userProfile?.email || user?.email || 'keithfell1@gmail.com').toLowerCase(),
-        displayName: userProfile?.displayName || user?.displayName || 'Keith Fell',
+        uid: user?.uid || userProfile?.uid || '',
+        email: (userProfile?.email || user?.email || '').toLowerCase().trim(),
+        displayName: userProfile?.displayName || user?.displayName || 'User',
       };
 
       const todayStr = new Date().toISOString().split('T')[0];
       const isMovingToToday = heading === 'today';
       const cleanWhere = (where.trim() && isSpecificStore(where.trim())) ? where.trim() : undefined;
 
-      // When moving out of the today heading to another heading (e.g. Grocery, Home, Other):
+      // When moving out of the today heading to another heading (e.g. Grocery, Work, etc.):
       // - isForToday becomes false
       // - dueDate is cleared if it was only set to today's date (or if moving out of Today list without a deliberate different date)
       let finalDueDate: string | undefined = whenDate ? whenDate.trim() : undefined;
@@ -279,6 +264,7 @@ const ItemDetailsModalContent: React.FC<ItemDetailsModalContentProps> = ({
 
       const updatedFields: Partial<ListItemModel> = {
         title: what.trim(),
+        notes: notes.trim() || undefined,
         location: cleanWhere,
         store: cleanWhere,
         category: cleanWhere,
@@ -311,11 +297,7 @@ const ItemDetailsModalContent: React.FC<ItemDetailsModalContentProps> = ({
 
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const targetSubListId =
-      targetHeading === 'today' ? selectedTodayListId :
-      targetHeading === 'grocery' ? selectedGroceryListId :
-      targetHeading === 'home' ? selectedHomeListId : selectedOtherListId;
-    await executeMoveOrSave(targetHeading, targetSubListId);
+    await executeMoveOrSave(targetHeading, selectedSubListId);
   };
 
   const handleDelete = () => {
@@ -324,64 +306,42 @@ const ItemDetailsModalContent: React.FC<ItemDetailsModalContentProps> = ({
     if (confirm(`Delete "${item.title}"?`)) {
       onClose();
       deleteListItem(item.listId || list.id, item.id, item.completed, item.title, {
-        email: (userProfile?.email || user?.email || 'keithfell1@gmail.com').toLowerCase(),
-        displayName: userProfile?.displayName || user?.displayName || 'Keith Fell',
+        email: (userProfile?.email || user?.email || '').toLowerCase().trim(),
+        displayName: userProfile?.displayName || user?.displayName || 'User',
       }).catch((err) => console.error('Error deleting item:', err));
     }
   };
 
   // Get current target label for clear UX
   const getTargetDisplayName = () => {
-    if (targetHeading === 'today') {
-      const found = todayLists.find((l) => l.id === selectedTodayListId);
-      return found ? found.title : 'Today';
-    }
-    if (targetHeading === 'grocery') {
-      const found = groceryLists.find((l) => l.id === selectedGroceryListId);
-      return found ? found.title : 'Grocery';
-    }
-    if (targetHeading === 'home') {
-      const found = homeLists.find((l) => l.id === selectedHomeListId);
-      return found ? found.title : 'Home';
-    }
-    if (targetHeading === 'other') {
-      const found = otherLists.find((l) => l.id === selectedOtherListId);
-      return found ? found.title : 'Other List';
-    }
-    return list.title;
+    const headingLists = allLists.filter((l) => getListHeading(l) === targetHeading);
+    const found = headingLists.find((l) => l.id === selectedSubListId);
+    if (found) return found.title;
+
+    if (targetHeading === 'today') return 'Today';
+    if (targetHeading === 'grocery') return 'Grocery';
+    const customMatch = customHeadings.find((h) => h.id === targetHeading);
+    return customMatch ? customMatch.label : targetHeading;
   };
 
   const isDifferentFromCurrent = () => {
     const actualSourceListId = item.listId || list.id;
-    if (targetHeading === 'today') {
-      return getListHeading(list) !== 'today' || (selectedTodayListId ? selectedTodayListId !== actualSourceListId : false);
-    }
-    if (targetHeading === 'grocery') {
-      return getListHeading(list) !== 'grocery' || (selectedGroceryListId ? selectedGroceryListId !== actualSourceListId : false);
-    }
-    if (targetHeading === 'home') {
-      return getListHeading(list) !== 'home' || (selectedHomeListId ? selectedHomeListId !== actualSourceListId : false);
-    }
-    if (targetHeading === 'other') return selectedOtherListId !== actualSourceListId;
+    if (targetHeading !== currentHeading) return true;
+    if (selectedSubListId && selectedSubListId !== actualSourceListId) return true;
     return false;
   };
 
   // Handle direct click on destination heading
-  const handleDestinationClick = async (dest: DestinationHeading) => {
+  const handleDestinationClick = async (dest: string) => {
     setTargetHeading(dest);
-    const targetSubListId =
-      dest === 'today' ? selectedTodayListId :
-      dest === 'grocery' ? selectedGroceryListId :
-      dest === 'home' ? selectedHomeListId : selectedOtherListId;
+    const headingLists = allLists.filter((l) => getListHeading(l) === dest);
+    const nextSubListId = headingLists.some((l) => l.id === selectedSubListId)
+      ? selectedSubListId
+      : (headingLists[0]?.id || '');
+    setSelectedSubListId(nextSubListId);
 
-    if (dest !== currentHeading) {
-      if (
-        (dest === 'today' && todayLists.length <= 1) ||
-        (dest === 'grocery' && groceryLists.length <= 1) ||
-        (dest === 'home' && homeLists.length <= 1)
-      ) {
-        await executeMoveOrSave(dest, targetSubListId);
-      }
+    if (dest !== currentHeading && headingLists.length <= 1) {
+      await executeMoveOrSave(dest, nextSubListId);
     }
   };
 
@@ -466,6 +426,41 @@ const ItemDetailsModalContent: React.FC<ItemDetailsModalContentProps> = ({
                 onChange={(e) => setWhat(e.target.value)}
                 placeholder="What needs to be done..."
                 className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2"
+              />
+            </div>
+          </div>
+
+          {/* Notes & Details */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                <FileText className="w-3.5 h-3.5 text-slate-400" />
+                <span>Notes & Details</span>
+              </label>
+              {canEdit && (
+                <button
+                  type="button"
+                  onClick={() => handleStartVoice('notes')}
+                  className={`text-[11px] font-semibold px-2 py-0.5 rounded-md flex items-center gap-1 transition ${
+                    isListening && activeVoiceField === 'notes'
+                      ? 'bg-rose-500 text-white animate-pulse'
+                      : 'text-slate-400 hover:text-rose-600 hover:bg-slate-100 dark:hover:bg-slate-800'
+                  }`}
+                  title="Dictate notes & details"
+                >
+                  <Mic className="w-3 h-3" />
+                  <span>{isListening && activeVoiceField === 'notes' ? 'Listening...' : 'Voice'}</span>
+                </button>
+              )}
+            </div>
+
+            <div className="relative">
+              <input
+                type="text"
+                disabled={!canEdit || loading}
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2"
               />
             </div>
           </div>
@@ -620,270 +615,82 @@ const ItemDetailsModalContent: React.FC<ItemDetailsModalContentProps> = ({
               )}
             </div>
 
-            {/* 4 Heading Options: Today, Grocery, Home, Other */}
-            <div className="grid grid-cols-4 gap-2 p-1.5 bg-slate-100 dark:bg-slate-800/80 rounded-2xl">
-              {/* Today */}
-              <button
-                type="button"
-                disabled={!canEdit || loading}
-                onClick={() => handleDestinationClick('today')}
-                className={`py-2 px-1 text-center rounded-xl text-xs font-bold flex flex-col sm:flex-row items-center justify-center gap-1 transition relative ${
-                  currentHeading === 'today'
-                    ? 'bg-white dark:bg-slate-900 shadow-xs ring-2'
-                    : targetHeading === 'today'
-                    ? 'text-white shadow-xs'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/60 dark:hover:bg-slate-700/60'
-                }`}
-                style={{
-                  ...(currentHeading === 'today' ? { color: activeAccent.text, borderColor: activeAccent.primary } : {}),
-                  ...(targetHeading === 'today' && currentHeading !== 'today' ? { backgroundColor: activeAccent.primary } : {})
-                }}
-                title={currentHeading === 'today' ? 'Currently in Today' : 'Click to move task to Today list'}
-              >
-                <CalendarCheck className="w-3.5 h-3.5 shrink-0" />
-                <span className="truncate">Today</span>
-                {currentHeading === 'today' && (
-                  <span 
-                    className="text-[9px] px-1 py-0.2 rounded font-extrabold hidden sm:inline"
-                    style={{ backgroundColor: activeAccent.light, color: activeAccent.text }}
-                  >
-                    Current
-                  </span>
-                )}
-              </button>
+            {/* Heading Options */}
+            <div className="flex flex-wrap gap-2 p-1.5 bg-slate-100 dark:bg-slate-800/80 rounded-2xl">
+              {headingOptions.map((opt) => {
+                const isCurrent = currentHeading === opt.id;
+                const isSelected = targetHeading === opt.id;
 
-              {/* Grocery */}
-              <button
-                type="button"
-                disabled={!canEdit || loading}
-                onClick={() => handleDestinationClick('grocery')}
-                className={`py-2 px-1 text-center rounded-xl text-xs font-bold flex flex-col sm:flex-row items-center justify-center gap-1 transition relative ${
-                  currentHeading === 'grocery'
-                    ? 'bg-white dark:bg-slate-900 shadow-xs ring-2'
-                    : targetHeading === 'grocery'
-                    ? 'text-white shadow-xs'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/60 dark:hover:bg-slate-700/60'
-                }`}
-                style={{
-                  ...(currentHeading === 'grocery' ? { color: activeAccent.text, borderColor: activeAccent.primary } : {}),
-                  ...(targetHeading === 'grocery' && currentHeading !== 'grocery' ? { backgroundColor: activeAccent.primary } : {})
-                }}
-                title={currentHeading === 'grocery' ? 'Currently in Grocery' : 'Click to move task to Grocery list'}
-              >
-                <ShoppingCart className="w-3.5 h-3.5 shrink-0" />
-                <span className="truncate">Grocery</span>
-                {currentHeading === 'grocery' && (
-                  <span 
-                    className="text-[9px] px-1 py-0.2 rounded font-extrabold hidden sm:inline"
-                    style={{ backgroundColor: activeAccent.light, color: activeAccent.text }}
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    disabled={!canEdit || loading}
+                    onClick={() => handleDestinationClick(opt.id)}
+                    className={`flex-1 min-w-[75px] py-2 px-2 text-center rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition relative cursor-pointer ${
+                      isCurrent
+                        ? 'bg-white dark:bg-slate-900 shadow-xs ring-2'
+                        : isSelected
+                        ? 'text-white shadow-xs'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/60 dark:hover:bg-slate-700/60'
+                    }`}
+                    style={{
+                      ...(isCurrent ? { color: activeAccent.text, borderColor: activeAccent.primary } : {}),
+                      ...(isSelected && !isCurrent ? { backgroundColor: activeAccent.primary } : {})
+                    }}
+                    title={isCurrent ? `Currently in ${opt.label}` : `Click to move task to ${opt.label}`}
                   >
-                    Current
-                  </span>
-                )}
-              </button>
-
-              {/* Home */}
-              <button
-                type="button"
-                disabled={!canEdit || loading}
-                onClick={() => handleDestinationClick('home')}
-                className={`py-2 px-1 text-center rounded-xl text-xs font-bold flex flex-col sm:flex-row items-center justify-center gap-1 transition relative ${
-                  currentHeading === 'home'
-                    ? 'bg-white dark:bg-slate-900 shadow-xs ring-2'
-                    : targetHeading === 'home'
-                    ? 'text-white shadow-xs'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/60 dark:hover:bg-slate-700/60'
-                }`}
-                style={{
-                  ...(currentHeading === 'home' ? { color: activeAccent.text, borderColor: activeAccent.primary } : {}),
-                  ...(targetHeading === 'home' && currentHeading !== 'home' ? { backgroundColor: activeAccent.primary } : {})
-                }}
-                title={currentHeading === 'home' ? 'Currently in Home' : 'Click to move task to Home list'}
-              >
-                <Home className="w-3.5 h-3.5 shrink-0" />
-                <span className="truncate">Home</span>
-                {currentHeading === 'home' && (
-                  <span 
-                    className="text-[9px] px-1 py-0.2 rounded font-extrabold hidden sm:inline"
-                    style={{ backgroundColor: activeAccent.light, color: activeAccent.text }}
-                  >
-                    Current
-                  </span>
-                )}
-              </button>
-
-              {/* Other */}
-              <button
-                type="button"
-                disabled={!canEdit || loading}
-                onClick={() => {
-                  setTargetHeading('other');
-                  if (!selectedOtherListId && otherLists.length > 0) {
-                    setSelectedOtherListId(otherLists[0].id);
-                  }
-                }}
-                className={`py-2 px-1 text-center rounded-xl text-xs font-bold flex flex-col sm:flex-row items-center justify-center gap-1 transition relative ${
-                  currentHeading === 'other'
-                    ? 'bg-white dark:bg-slate-900 shadow-xs ring-2'
-                    : targetHeading === 'other'
-                    ? 'text-white shadow-xs'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/60 dark:hover:bg-slate-700/60'
-                }`}
-                style={{
-                  ...(currentHeading === 'other' ? { color: activeAccent.text, borderColor: activeAccent.primary } : {}),
-                  ...(targetHeading === 'other' && currentHeading !== 'other' ? { backgroundColor: activeAccent.primary } : {})
-                }}
-                title="Choose custom list under Other"
-              >
-                <FolderOpen className="w-3.5 h-3.5 shrink-0" />
-                <span className="truncate">Other</span>
-                {currentHeading === 'other' && (
-                  <span 
-                    className="text-[9px] px-1 py-0.2 rounded font-extrabold hidden sm:inline"
-                    style={{ backgroundColor: activeAccent.light, color: activeAccent.text }}
-                  >
-                    Current
-                  </span>
-                )}
-              </button>
+                    {opt.iconType === 'today' ? (
+                      <CalendarCheck className="w-3.5 h-3.5 shrink-0" />
+                    ) : opt.iconType === 'grocery' ? (
+                      <ShoppingCart className="w-3.5 h-3.5 shrink-0" />
+                    ) : (
+                      <Folder className="w-3.5 h-3.5 shrink-0" />
+                    )}
+                    <span className="truncate">{opt.label}</span>
+                    {isCurrent && (
+                      <span 
+                        className="text-[9px] px-1 py-0.2 rounded font-extrabold hidden sm:inline"
+                        style={{ backgroundColor: activeAccent.light, color: activeAccent.text }}
+                      >
+                        Current
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
             </div>
 
-            {/* Sub-list selector when selected heading has multiple lists or when other is selected */}
-            {targetHeading === 'today' && todayLists.length > 1 && (
+            {/* Sub-list selector when selected heading has multiple lists */}
+            {targetHeadingLists.length > 1 && (
               <div className="pt-1 animate-in fade-in slide-in-from-top-1 duration-150 space-y-2">
                 <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400">
-                  Select destination Today list:
+                  Select destination {headingOptions.find((h) => h.id === targetHeading)?.label || 'List'}:
                 </label>
                 <div className="flex gap-2">
                   <select
-                    value={selectedTodayListId}
-                    onChange={(e) => setSelectedTodayListId(e.target.value)}
-                    disabled={!canEdit || loading}
-                    className="flex-1 px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  >
-                    {todayLists.map((tl) => (
-                      <option key={tl.id} value={tl.id}>
-                        {tl.title}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    type="button"
-                    disabled={loading || !selectedTodayListId || selectedTodayListId === (item.listId || list.id)}
-                    onClick={() => executeMoveOrSave('today', selectedTodayListId)}
-                    className="px-3.5 py-2 text-white rounded-xl text-xs font-bold shadow-xs transition flex items-center gap-1.5 shrink-0 disabled:opacity-50"
-                    style={{ backgroundColor: activeAccent.primary }}
-                  >
-                    <ArrowRight className="w-3.5 h-3.5" />
-                    <span>Move</span>
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {targetHeading === 'grocery' && groceryLists.length > 1 && (
-              <div className="pt-1 animate-in fade-in slide-in-from-top-1 duration-150 space-y-2">
-                <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400">
-                  Select destination Grocery list:
-                </label>
-                <div className="flex gap-2">
-                  <select
-                    value={selectedGroceryListId}
-                    onChange={(e) => setSelectedGroceryListId(e.target.value)}
+                    value={selectedSubListId}
+                    onChange={(e) => setSelectedSubListId(e.target.value)}
                     disabled={!canEdit || loading}
                     className="flex-1 px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2"
                   >
-                    {groceryLists.map((gl) => (
-                      <option key={gl.id} value={gl.id}>
-                        {gl.title}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    type="button"
-                    disabled={loading || !selectedGroceryListId || selectedGroceryListId === (item.listId || list.id)}
-                    onClick={() => executeMoveOrSave('grocery', selectedGroceryListId)}
-                    className="px-3.5 py-2 text-white rounded-xl text-xs font-bold shadow-xs transition flex items-center gap-1.5 shrink-0 disabled:opacity-50"
-                    style={{ backgroundColor: activeAccent.primary }}
-                  >
-                    <ArrowRight className="w-3.5 h-3.5" />
-                    <span>Move</span>
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {targetHeading === 'home' && homeLists.length > 1 && (
-              <div className="pt-1 animate-in fade-in slide-in-from-top-1 duration-150 space-y-2">
-                <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400">
-                  Select destination Home list:
-                </label>
-                <div className="flex gap-2">
-                  <select
-                    value={selectedHomeListId}
-                    onChange={(e) => setSelectedHomeListId(e.target.value)}
-                    disabled={!canEdit || loading}
-                    className="flex-1 px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2"
-                  >
-                    {homeLists.map((hl) => (
+                    {targetHeadingLists.map((hl) => (
                       <option key={hl.id} value={hl.id}>
-                        {hl.title}
+                        {hl.title} {hl.id === (item.listId || list.id) ? '(Current list)' : ''}
                       </option>
                     ))}
                   </select>
                   <button
                     type="button"
-                    disabled={loading || !selectedHomeListId || selectedHomeListId === (item.listId || list.id)}
-                    onClick={() => executeMoveOrSave('home', selectedHomeListId)}
-                    className="px-3.5 py-2 text-white rounded-xl text-xs font-bold shadow-xs transition flex items-center gap-1.5 shrink-0 disabled:opacity-50"
+                    disabled={loading || !selectedSubListId || selectedSubListId === (item.listId || list.id)}
+                    onClick={() => executeMoveOrSave(targetHeading, selectedSubListId)}
+                    className="px-3.5 py-2 text-white rounded-xl text-xs font-bold shadow-xs transition flex items-center gap-1.5 shrink-0 disabled:opacity-50 cursor-pointer"
                     style={{ backgroundColor: activeAccent.primary }}
                   >
                     <ArrowRight className="w-3.5 h-3.5" />
                     <span>Move</span>
                   </button>
                 </div>
-              </div>
-            )}
-
-            {/* If Other is chosen, show choices of custom lists under Other */}
-            {targetHeading === 'other' && (
-              <div className="pt-1 animate-in fade-in slide-in-from-top-1 duration-150 space-y-2">
-                <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400">
-                  Select destination list under Other:
-                </label>
-                {otherLists.length > 0 ? (
-                  <div className="flex gap-2">
-                    <select
-                      value={selectedOtherListId}
-                      onChange={(e) => {
-                        setSelectedOtherListId(e.target.value);
-                      }}
-                      disabled={!canEdit || loading}
-                      className="flex-1 px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2"
-                    >
-                      {otherLists.map((ol) => (
-                        <option key={ol.id} value={ol.id}>
-                          {ol.title} {ol.type === 'grocery' ? '(Grocery List)' : ''}
-                        </option>
-                      ))}
-                    </select>
-
-                    <button
-                      type="button"
-                      disabled={loading || !selectedOtherListId || selectedOtherListId === (item.listId || list.id)}
-                      onClick={() => executeMoveOrSave('other', selectedOtherListId)}
-                      className="px-3.5 py-2 text-white rounded-xl text-xs font-bold shadow-xs transition flex items-center gap-1.5 shrink-0 disabled:opacity-50"
-                      style={{ backgroundColor: activeAccent.primary }}
-                    >
-                      <ArrowRight className="w-3.5 h-3.5" />
-                      <span>Move</span>
-                    </button>
-                  </div>
-                ) : (
-                  <div className="text-xs text-slate-500 dark:text-slate-400 italic py-2 bg-slate-50 dark:bg-slate-800/60 px-3.5 rounded-xl border border-dashed border-slate-200 dark:border-slate-700">
-                    No custom lists created under Other yet.
-                  </div>
-                )}
               </div>
             )}
 
@@ -893,14 +700,8 @@ const ItemDetailsModalContent: React.FC<ItemDetailsModalContentProps> = ({
                 <button
                   type="button"
                   disabled={loading || !what.trim()}
-                  onClick={() => {
-                    const targetSubListId =
-                      targetHeading === 'today' ? selectedTodayListId :
-                      targetHeading === 'grocery' ? selectedGroceryListId :
-                      targetHeading === 'home' ? selectedHomeListId : selectedOtherListId;
-                    executeMoveOrSave(targetHeading, targetSubListId);
-                  }}
-                  className="w-full py-2.5 px-4 text-white rounded-xl text-xs font-bold shadow-xs transition flex items-center justify-center gap-2"
+                  onClick={() => executeMoveOrSave(targetHeading, selectedSubListId)}
+                  className="w-full py-2.5 px-4 text-white rounded-xl text-xs font-bold shadow-xs transition flex items-center justify-center gap-2 cursor-pointer"
                   style={{ backgroundColor: activeAccent.primary }}
                 >
                   <ArrowRight className="w-4 h-4" />

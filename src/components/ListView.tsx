@@ -60,9 +60,9 @@ export const ListView: React.FC<ListViewProps> = ({ list, onBack, onOpenShare, l
   const [movingItemId, setMovingItemId] = useState<string | null>(null);
 
   const currentUser = {
-    uid: user?.uid || userProfile?.uid || 'user_keithfell1_gmail_com',
-    email: (userProfile?.email || user?.email || 'keithfell1@gmail.com').toLowerCase(),
-    displayName: userProfile?.displayName || user?.displayName || 'Keith Fell',
+    uid: user?.uid || userProfile?.uid || '',
+    email: (userProfile?.email || user?.email || '').toLowerCase().trim(),
+    displayName: userProfile?.displayName || user?.displayName || 'User',
   };
 
   const role: PermissionRole = getUserPermission(list, currentUser);
@@ -375,8 +375,8 @@ export const ListView: React.FC<ListViewProps> = ({ list, onBack, onOpenShare, l
                   : 'hover:bg-slate-50/70 dark:hover:bg-slate-800/50 text-slate-900 dark:text-slate-100'
               }`}
             >
-              {/* Checkbox & Info on the same line */}
-              <div className="flex items-center gap-3 min-w-0 flex-1">
+              {/* Checkbox & Info */}
+              <div className="flex items-start gap-3 min-w-0 flex-1 py-0.5">
                 <button
                   type="button"
                   disabled={!canEdit}
@@ -384,7 +384,7 @@ export const ListView: React.FC<ListViewProps> = ({ list, onBack, onOpenShare, l
                     e.stopPropagation();
                     handleToggle(item);
                   }}
-                  className="text-slate-400 hover:text-emerald-600 transition shrink-0"
+                  className="text-slate-400 hover:text-emerald-600 transition shrink-0 mt-0.5"
                 >
                   {item.completed ? (
                     <CheckCircle2 className="w-5 h-5 text-emerald-500 fill-emerald-50 dark:fill-emerald-950/40" />
@@ -393,61 +393,76 @@ export const ListView: React.FC<ListViewProps> = ({ list, onBack, onOpenShare, l
                   )}
                 </button>
 
-                <div className="flex items-center gap-2 flex-wrap min-w-0 flex-1">
-                  <span
-                    className={`text-sm font-semibold leading-tight break-words ${
-                      item.completed ? 'line-through text-slate-400 dark:text-slate-500' : ''
-                    }`}
-                  >
-                    {item.title}
-                  </span>
-
-                  {/* Quantity badge */}
-                  {item.quantity && (
-                    <span className="text-xs font-semibold px-2 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-md shrink-0 border border-slate-200/60 dark:border-slate-700">
-                      {item.quantity} {item.unit || ''}
-                    </span>
-                  )}
-
-                  {/* Store / Location Badge if specifically present */}
-                  {(() => {
-                    const displayStore = isSpecificStore(item.store) ? item.store : isSpecificStore(item.location) ? item.location : isSpecificStore(item.category) ? item.category : undefined;
-                    if (!displayStore) return null;
-                    return (
-                      <span className="text-[10px] font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 px-1.5 py-0.5 rounded-md border border-emerald-200/80 dark:border-emerald-800 shrink-0 flex items-center gap-0.5">
-                        <MapPin className="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400" />
-                        <span>{displayStore}</span>
-                      </span>
-                    );
-                  })()}
-
-                  {/* Edit Button to bring up Task Editor */}
-                  {canEdit && (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedItem(item);
-                        setIsDetailsOpen(true);
-                      }}
-                      className="p-1 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 rounded-md transition inline-flex items-center justify-center shrink-0 border border-slate-200/60 dark:border-slate-700"
-                      title="Edit task (What, Where, When)"
-                      aria-label="Edit task"
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span
+                      className={`text-sm font-semibold leading-tight break-words ${
+                        item.completed ? 'line-through text-slate-400 dark:text-slate-500' : ''
+                      }`}
                     >
-                      <Edit3 className="w-3 h-3 text-slate-500 dark:text-slate-400" />
-                    </button>
-                  )}
+                      {item.title}
+                    </span>
 
-                  {/* Priority Tag (only if high or urgent) */}
-                  {item.priority === 'urgent' && !item.completed && (
-                    <span className="text-[10px] font-extrabold px-1.5 py-0.5 bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 rounded shrink-0">
-                      Urgent
-                    </span>
-                  )}
-                  {item.priority === 'high' && !item.completed && (
-                    <span className="text-[10px] font-bold px-1.5 py-0.5 bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 border border-rose-200 dark:border-rose-800 rounded shrink-0">
-                      High
-                    </span>
+                    {/* Quantity badge */}
+                    {item.quantity && (
+                      <span className="text-xs font-semibold px-2 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-md shrink-0 border border-slate-200/60 dark:border-slate-700">
+                        {item.quantity} {item.unit || ''}
+                      </span>
+                    )}
+
+                    {/* Store / Location Badge if specifically present */}
+                    {(() => {
+                      const displayStore = isSpecificStore(item.store) ? item.store : isSpecificStore(item.location) ? item.location : isSpecificStore(item.category) ? item.category : undefined;
+                      if (!displayStore) return null;
+                      return (
+                        <span className="text-[10px] font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 px-1.5 py-0.5 rounded-md border border-emerald-200/80 dark:border-emerald-800 shrink-0 flex items-center gap-0.5">
+                          <MapPin className="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400" />
+                          <span>{displayStore}</span>
+                        </span>
+                      );
+                    })()}
+
+                    {/* Edit Button to bring up Task Editor */}
+                    {canEdit && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedItem(item);
+                          setIsDetailsOpen(true);
+                        }}
+                        className="p-1 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 rounded-md transition inline-flex items-center justify-center shrink-0 border border-slate-200/60 dark:border-slate-700"
+                        title="Edit task (What, Where, When)"
+                        aria-label="Edit task"
+                      >
+                        <Edit3 className="w-3 h-3 text-slate-500 dark:text-slate-400" />
+                      </button>
+                    )}
+
+                    {/* Priority Tag (only if high or urgent) */}
+                    {item.priority === 'urgent' && !item.completed && (
+                      <span className="text-[10px] font-extrabold px-1.5 py-0.5 bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 rounded shrink-0">
+                        Urgent
+                      </span>
+                    )}
+                    {item.priority === 'high' && !item.completed && (
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 border border-rose-200 dark:border-rose-800 rounded shrink-0">
+                        High
+                      </span>
+                    )}
+                  </div>
+
+                  {/* More info / Notes line under item */}
+                  {item.notes && item.notes.trim() && (
+                    <p
+                      className={`text-xs mt-1 break-words leading-relaxed ${
+                        item.completed
+                          ? 'line-through text-slate-400/80 dark:text-slate-500/80'
+                          : 'text-slate-500 dark:text-slate-400'
+                      }`}
+                    >
+                      {item.notes}
+                    </p>
                   )}
                 </div>
               </div>

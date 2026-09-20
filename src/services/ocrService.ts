@@ -143,9 +143,9 @@ export function fileToBase64(file: File | Blob): Promise<string> {
  */
 export function compressImage(
   dataUrl: string,
-  maxWidth = 1200,
-  maxHeight = 1200,
-  quality = 0.8
+  maxWidth = 960,
+  maxHeight = 960,
+  quality = 0.72
 ): Promise<string> {
   return new Promise((resolve) => {
     const img = new Image();

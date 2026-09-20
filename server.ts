@@ -39,6 +39,20 @@ async function startServer() {
     });
   });
 
+  // Public App Configuration endpoint
+  app.get('/api/app-config', (_req, res) => {
+    const devUrl = process.env.APP_URL || '';
+    const sharedUrl =
+      process.env.SHARED_APP_URL ||
+      (devUrl.includes('ais-dev-') ? devUrl.replace('ais-dev-', 'ais-pre-') : '') ||
+      'https://ais-pre-4ewykb3pq2vqg5p4h44jfk-301569695870.us-east5.run.app';
+
+    res.json({
+      publicAppUrl: sharedUrl,
+      devAppUrl: devUrl,
+    });
+  });
+
   // OCR Scan Endpoint
   app.post('/api/ocr-scan', async (req, res) => {
     try {
@@ -91,8 +105,8 @@ Return an array containing one entry for each line of text found in the image.
 
       const candidateModels = [
         'gemini-3.1-flash-lite',
-        'gemini-3.7-flash',
         'gemini-flash-latest',
+        'gemini-3.8-flash',
       ];
       let response: any = null;
       let lastError: any = null;
@@ -100,6 +114,27 @@ Return an array containing one entry for each line of text found in the image.
       for (const modelName of candidateModels) {
         for (let attempt = 0; attempt < 2; attempt++) {
           try {
+            const genConfig: any = {
+              responseMimeType: 'application/json',
+              responseSchema: {
+                type: Type.ARRAY,
+                description: 'List of extracted tasks or grocery items from the image OCR scan',
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    title: { type: Type.STRING, description: 'Exact item name or task title' },
+                    quantity: { type: Type.NUMBER, description: 'Optional quantity number' },
+                    unit: { type: Type.STRING, description: 'Optional measurement unit' },
+                    store: { type: Type.STRING, description: 'Optional store' },
+                    category: { type: Type.STRING, description: 'Optional category' },
+                    priority: { type: Type.STRING, description: 'Priority level (urgent, high, medium, low)' },
+                    rawLine: { type: Type.STRING, description: 'Original verbatim line from image' },
+                  },
+                  required: ['title'],
+                },
+              },
+            };
+
             response = await ai.models.generateContent({
               model: modelName,
               contents: {
@@ -115,28 +150,7 @@ Return an array containing one entry for each line of text found in the image.
                   },
                 ],
               },
-              config: {
-                // Disable thinking budget to achieve near-instant OCR latency
-                thinkingConfig: { thinkingBudget: 0 },
-                responseMimeType: 'application/json',
-                responseSchema: {
-                  type: Type.ARRAY,
-                  description: 'List of extracted tasks or grocery items from the image OCR scan',
-                  items: {
-                    type: Type.OBJECT,
-                    properties: {
-                      title: { type: Type.STRING, description: 'Exact item name or task title' },
-                      quantity: { type: Type.NUMBER, description: 'Optional quantity number' },
-                      unit: { type: Type.STRING, description: 'Optional measurement unit' },
-                      store: { type: Type.STRING, description: 'Optional store' },
-                      category: { type: Type.STRING, description: 'Optional category' },
-                      priority: { type: Type.STRING, description: 'Priority level (urgent, high, medium, low)' },
-                      rawLine: { type: Type.STRING, description: 'Original verbatim line from image' },
-                    },
-                    required: ['title'],
-                  },
-                },
-              },
+              config: genConfig,
             });
 
             if (response?.text) {
@@ -144,9 +158,14 @@ Return an array containing one entry for each line of text found in the image.
             }
           } catch (modelErr: any) {
             lastError = modelErr;
-            console.warn(`OCR attempt with model ${modelName} (attempt ${attempt + 1}) failed:`, modelErr?.message || modelErr);
-            // Quick backoff before retry
-            await new Promise((r) => setTimeout(r, 300 * (attempt + 1)));
+            const errMsg = modelErr?.message || String(modelErr);
+            // Only warn if not a known high demand error during fallback
+            if (!errMsg.includes('503') && !errMsg.includes('UNAVAILABLE')) {
+              console.warn(`OCR model ${modelName} (attempt ${attempt + 1}) notice:`, errMsg);
+            }
+            if (attempt === 0) {
+              await new Promise((r) => setTimeout(r, 250));
+            }
           }
         }
         if (response?.text) break;

@@ -80,8 +80,8 @@ export const ListCard: React.FC<ListCardProps> = ({
   const [isAdding, setIsAdding] = useState(false);
 
   const currentUser = {
-    uid: user?.uid || userProfile?.uid || 'user_keithfell1_gmail_com',
-    email: (userProfile?.email || user?.email || 'keithfell1@gmail.com').toLowerCase(),
+    uid: user?.uid || userProfile?.uid || '',
+    email: (userProfile?.email || user?.email || '').toLowerCase().trim(),
   };
 
   const role: PermissionRole = getUserPermission(list, currentUser);
@@ -661,7 +661,11 @@ export const ListCard: React.FC<ListCardProps> = ({
                             </div>
 
                             {item.notes && (
-                              <p className="text-[11px] text-slate-400 dark:text-slate-500 line-clamp-1 mt-0.5">
+                              <p className={`text-xs mt-0.5 break-words ${
+                                item.completed 
+                                  ? 'line-through text-slate-400/80 dark:text-slate-500/80' 
+                                  : 'text-slate-500 dark:text-slate-400'
+                              }`}>
                                 {item.notes}
                               </p>
                             )}
@@ -875,7 +879,11 @@ export const ListCard: React.FC<ListCardProps> = ({
                     </div>
 
                     {item.notes && (
-                      <p className="text-[11px] text-slate-400 dark:text-slate-500 line-clamp-1 mt-0.5">
+                      <p className={`text-xs mt-0.5 break-words ${
+                        item.completed 
+                          ? 'line-through text-slate-400/80 dark:text-slate-500/80' 
+                          : 'text-slate-500 dark:text-slate-400'
+                      }`}>
                         {item.notes}
                       </p>
                     )}

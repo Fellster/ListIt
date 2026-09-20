@@ -1,6 +1,7 @@
 import {
   collection,
   doc,
+  getDoc,
   setDoc,
   updateDoc,
   deleteDoc,
@@ -15,13 +16,14 @@ import {
   limit
 } from 'firebase/firestore';
 import { db } from '../firebase';
-import { ListModel, ListItemModel, ActivityEntry, PermissionRole, HeadingKey, getListHeading } from '../types';
+import { ListModel, ListItemModel, ActivityEntry, PermissionRole, HeadingKey, getListHeading, ListInvitation, InvitationStatus } from '../types';
 import { isSpecificStore } from '../utils/groceryCategorizer';
 
 // Local Storage Cache Keys
 const STORAGE_LISTS_KEY = 'listit_cached_lists';
 const STORAGE_ITEMS_PREFIX = 'listit_cached_items_';
 const STORAGE_ACTIVITY_PREFIX = 'listit_cached_activity_';
+const STORAGE_INVITATIONS_KEY = 'listit_cached_invitations';
 
 export function getLocalLists(): ListModel[] {
   try {
@@ -101,11 +103,18 @@ export function subscribeUserLists(
 
   const listMap = new Map<string, ListModel>();
 
-  // Initialize with local cache first so UI is instant
+  // Initialize with local cache only for lists matching the current user
   const cached = getLocalLists();
-  if (cached.length > 0) {
-    cached.forEach((l) => listMap.set(l.id, l));
-    onUpdate(cached);
+  const userCached = cached.filter((l) => 
+    (userId && l.ownerId === userId) ||
+    (normalizedEmail && (
+      (l.ownerEmail || '').toLowerCase().trim() === normalizedEmail ||
+      l.memberEmails?.some((e) => (e || '').toLowerCase().trim() === normalizedEmail)
+    ))
+  );
+  if (userCached.length > 0) {
+    userCached.forEach((l) => listMap.set(l.id, l));
+    onUpdate(userCached);
   }
 
   const processAndEmit = () => {
@@ -220,8 +229,8 @@ export async function createList(
     description: data.description?.trim() || '',
     type: data.type,
     heading: resolvedHeading,
-    color: data.color || (resolvedHeading === 'grocery' ? 'emerald' : resolvedHeading === 'home' ? 'amber' : 'emerald'),
-    icon: data.icon || (data.type === 'grocery' || resolvedHeading === 'grocery' ? '🛒' : resolvedHeading === 'home' ? 'home' : resolvedHeading === 'today' ? 'calendar' : '📝'),
+    color: data.color || (resolvedHeading === 'grocery' ? 'emerald' : 'emerald'),
+    icon: data.icon || (data.type === 'grocery' || resolvedHeading === 'grocery' ? '🛒' : resolvedHeading === 'today' ? 'calendar' : '📝'),
     ownerId: owner.uid,
     ownerEmail: normalizedEmail,
     ownerName: owner.displayName || 'Owner',
@@ -359,16 +368,26 @@ export async function deleteList(listId: string) {
 }
 
 /**
- * Shares a list with a user email with specific permission (editor or viewer)
+ * Shares a list with a user email with specific permission (editor or viewer).
+ * Saves permission to Firestore, normalizes email, updates memberEmails and editorEmails.
+ * Throws if Firestore update fails.
  */
 export async function shareListWithUser(
   list: ListModel,
   targetEmail: string,
   targetName: string | undefined,
   role: 'editor' | 'viewer',
-  actingUser: { email: string; displayName: string }
-) {
+  actingUser: { email: string; displayName?: string; uid?: string }
+): Promise<ListModel> {
   const normalizedTargetEmail = targetEmail.toLowerCase().trim();
+  if (!normalizedTargetEmail || !normalizedTargetEmail.includes('@')) {
+    throw new Error('Please enter a valid email address.');
+  }
+
+  if (normalizedTargetEmail === (list.ownerEmail || '').toLowerCase().trim()) {
+    throw new Error('This user is already the owner of this list.');
+  }
+
   const safeKey = sanitizeKey(normalizedTargetEmail);
   const updatedSharedWith = {
     ...(list.sharedWith || {}),
@@ -381,134 +400,675 @@ export async function shareListWithUser(
   };
 
   const updatedMemberEmails = Array.from(
-    new Set([...(list.memberEmails || []), normalizedTargetEmail])
+    new Set([...(list.memberEmails || []).map((e) => e.toLowerCase().trim()), normalizedTargetEmail])
   );
 
+  const existingEditorEmails: string[] = ((list as any).editorEmails || []).map((e: string) => e.toLowerCase().trim());
+  const updatedEditorEmails = role === 'editor'
+    ? Array.from(new Set([...existingEditorEmails, normalizedTargetEmail]))
+    : existingEditorEmails.filter((e) => e !== normalizedTargetEmail);
+
+  // Update Firestore first - do NOT swallow errors!
+  const listRef = doc(db, 'lists', list.id);
+  await updateDoc(listRef, {
+    sharedWith: updatedSharedWith,
+    memberEmails: updatedMemberEmails,
+    editorEmails: updatedEditorEmails,
+    updatedAt: serverTimestamp(),
+  });
+
+  // Only after Firestore update succeeds, create updated list and cache locally
   const updatedList: ListModel = {
     ...list,
     sharedWith: updatedSharedWith,
     memberEmails: updatedMemberEmails,
+    editorEmails: updatedEditorEmails,
     updatedAt: new Date().toISOString() as any,
-  };
+  } as ListModel;
 
   const currentLists = getLocalLists();
   saveLocalLists(currentLists.map((l) => (l.id === list.id ? updatedList : l)));
 
+  // Try to record activity (non-fatal)
   try {
-    const listRef = doc(db, 'lists', list.id);
-    await updateDoc(listRef, {
-      sharedWith: updatedSharedWith,
-      memberEmails: updatedMemberEmails,
-      updatedAt: serverTimestamp(),
-    });
-
     const actRef = doc(collection(db, 'lists', list.id, 'activity'));
     await setDoc(actRef, {
       listId: list.id,
-      userEmail: actingUser.email,
-      userName: actingUser.displayName,
+      userEmail: actingUser.email || '',
+      userName: actingUser.displayName || 'Owner',
       action: 'shared_list',
       details: `Shared with ${normalizedTargetEmail} as ${role === 'editor' ? 'Editor (Can Edit)' : 'Viewer (View Only)'}`,
       timestamp: serverTimestamp(),
     });
   } catch (err: any) {
-    console.info('Firestore list share notice:', err?.message || err);
+    console.warn('Activity logging notice:', err?.message || err);
   }
+
+  return updatedList;
 }
 
 /**
- * Changes permission role of an existing collaborator
+ * Changes permission role of an existing collaborator.
+ * Throws if Firestore update fails.
  */
 export async function updateCollaboratorRole(
   list: ListModel,
   targetEmail: string,
   newRole: 'editor' | 'viewer',
-  actingUser: { email: string; displayName: string }
-) {
+  actingUser: { email: string; displayName?: string; uid?: string }
+): Promise<ListModel> {
   const normalizedTargetEmail = targetEmail.toLowerCase().trim();
   const safeKey = sanitizeKey(normalizedTargetEmail);
 
-  if (!list.sharedWith || !list.sharedWith[safeKey]) return;
+  const existingShared = list.sharedWith || {};
+  const currentRecord = existingShared[safeKey] || Object.values(existingShared).find(
+    (m) => m?.email?.toLowerCase().trim() === normalizedTargetEmail
+  );
 
   const updatedSharedWith = {
-    ...list.sharedWith,
+    ...existingShared,
     [safeKey]: {
-      ...list.sharedWith[safeKey],
+      ...(currentRecord || {
+        email: normalizedTargetEmail,
+        name: normalizedTargetEmail.split('@')[0],
+        addedAt: new Date().toISOString(),
+      }),
       role: newRole,
     },
   };
 
-  const updatedList = { ...list, sharedWith: updatedSharedWith };
+  const existingEditorEmails: string[] = ((list as any).editorEmails || []).map((e: string) => e.toLowerCase().trim());
+  const updatedEditorEmails = newRole === 'editor'
+    ? Array.from(new Set([...existingEditorEmails, normalizedTargetEmail]))
+    : existingEditorEmails.filter((e) => e !== normalizedTargetEmail);
+
+  const listRef = doc(db, 'lists', list.id);
+  await updateDoc(listRef, {
+    sharedWith: updatedSharedWith,
+    editorEmails: updatedEditorEmails,
+    updatedAt: serverTimestamp(),
+  });
+
+  const updatedList: ListModel = {
+    ...list,
+    sharedWith: updatedSharedWith,
+    editorEmails: updatedEditorEmails,
+    updatedAt: new Date().toISOString() as any,
+  } as ListModel;
+
   const currentLists = getLocalLists();
   saveLocalLists(currentLists.map((l) => (l.id === list.id ? updatedList : l)));
 
   try {
-    const listRef = doc(db, 'lists', list.id);
-    await updateDoc(listRef, {
-      sharedWith: updatedSharedWith,
-      updatedAt: serverTimestamp(),
-    });
-
     const actRef = doc(collection(db, 'lists', list.id, 'activity'));
     await setDoc(actRef, {
       listId: list.id,
-      userEmail: actingUser.email,
-      userName: actingUser.displayName,
+      userEmail: actingUser.email || '',
+      userName: actingUser.displayName || 'Owner',
       action: 'changed_permission',
       details: `Updated ${normalizedTargetEmail}'s permission to ${newRole === 'editor' ? 'Editor' : 'Viewer'}`,
       timestamp: serverTimestamp(),
     });
-  } catch (err: any) {
-    console.info('Firestore role update notice:', err?.message || err);
+  } catch (err) {
+    console.warn('Activity logging notice:', err);
   }
+
+  return updatedList;
 }
 
 /**
- * Removes collaborator access from a list
+ * Removes collaborator access from a list.
+ * Throws if Firestore update fails.
  */
 export async function removeCollaborator(
   list: ListModel,
   targetEmail: string,
-  actingUser: { email: string; displayName: string }
-) {
+  actingUser: { email: string; displayName?: string; uid?: string }
+): Promise<ListModel> {
   const normalizedTargetEmail = targetEmail.toLowerCase().trim();
   const safeKey = sanitizeKey(normalizedTargetEmail);
 
   const updatedSharedWith = { ...(list.sharedWith || {}) };
   delete updatedSharedWith[safeKey];
+  // Also clean up any key whose email or raw key matches normalizedTargetEmail
+  Object.keys(updatedSharedWith).forEach((k) => {
+    if (
+      k.toLowerCase() === normalizedTargetEmail ||
+      updatedSharedWith[k]?.email?.toLowerCase().trim() === normalizedTargetEmail
+    ) {
+      delete updatedSharedWith[k];
+    }
+  });
 
-  const updatedMemberEmails = (list.memberEmails || []).filter(
-    (e) => e.toLowerCase() !== normalizedTargetEmail
-  );
+  const updatedMemberEmails = (list.memberEmails || [])
+    .map((e) => e.toLowerCase().trim())
+    .filter((e) => e !== normalizedTargetEmail);
 
-  const updatedList = {
+  const existingEditorEmails: string[] = ((list as any).editorEmails || []).map((e: string) => e.toLowerCase().trim());
+  const updatedEditorEmails = existingEditorEmails.filter((e) => e !== normalizedTargetEmail);
+
+  const listRef = doc(db, 'lists', list.id);
+  await updateDoc(listRef, {
+    sharedWith: updatedSharedWith,
+    memberEmails: updatedMemberEmails,
+    editorEmails: updatedEditorEmails,
+    updatedAt: serverTimestamp(),
+  });
+
+  const updatedList: ListModel = {
     ...list,
     sharedWith: updatedSharedWith,
     memberEmails: updatedMemberEmails,
-  };
+    editorEmails: updatedEditorEmails,
+    updatedAt: new Date().toISOString() as any,
+  } as ListModel;
 
   const currentLists = getLocalLists();
   saveLocalLists(currentLists.map((l) => (l.id === list.id ? updatedList : l)));
 
   try {
-    const listRef = doc(db, 'lists', list.id);
-    await updateDoc(listRef, {
-      sharedWith: updatedSharedWith,
-      memberEmails: updatedMemberEmails,
+    const actRef = doc(collection(db, 'lists', list.id, 'activity'));
+    await setDoc(actRef, {
+      listId: list.id,
+      userEmail: actingUser.email || '',
+      userName: actingUser.displayName || 'Owner',
+      action: 'removed_member',
+      details: `Removed ${normalizedTargetEmail} from list`,
+      timestamp: serverTimestamp(),
+    });
+  } catch (err) {
+    console.warn('Activity logging notice:', err);
+  }
+
+  return updatedList;
+}
+
+// -------------------------------------------------------------
+// LIST INVITATIONS SYSTEM
+// -------------------------------------------------------------
+
+export function getLocalInvitations(): ListInvitation[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_INVITATIONS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+export function saveLocalInvitations(invites: ListInvitation[]) {
+  try {
+    localStorage.setItem(STORAGE_INVITATIONS_KEY, JSON.stringify(invites));
+    window.dispatchEvent(new CustomEvent('listit_invitations_changed', { detail: invites }));
+  } catch (e) {
+    console.warn('Failed to cache invitations locally:', e);
+  }
+}
+
+/**
+ * Creates a pending list invitation.
+ * Does NOT immediately grant membership to the list.
+ */
+export async function createListInvitation(
+  list: ListModel,
+  targetEmail: string,
+  role: 'editor' | 'viewer',
+  actingUser: { email: string; displayName: string; uid?: string }
+): Promise<ListInvitation> {
+  const normalizedTargetEmail = targetEmail.toLowerCase().trim();
+  const normalizedOwnerEmail = (list.ownerEmail || '').toLowerCase().trim();
+
+  if (!normalizedTargetEmail || !normalizedTargetEmail.includes('@')) {
+    throw new Error('Please enter a valid email address.');
+  }
+
+  if (normalizedTargetEmail === normalizedOwnerEmail) {
+    throw new Error('This user is already the owner of this list.');
+  }
+
+  // Check if user is already an accepted collaborator
+  const safeKey = sanitizeKey(normalizedTargetEmail);
+  if (list.sharedWith && list.sharedWith[safeKey]) {
+    const existing = list.sharedWith[safeKey];
+    throw new Error(`${normalizedTargetEmail} already has active access as ${existing.role === 'editor' ? 'Editor' : 'Viewer'}.`);
+  }
+
+  const invRef = doc(collection(db, 'invitations'));
+  const invId = invRef.id;
+
+  const newInvitation: ListInvitation = {
+    id: invId,
+    listId: list.id,
+    listTitle: list.title,
+    listType: list.type || 'general',
+    ownerId: list.ownerId || actingUser.uid || 'owner',
+    ownerEmail: list.ownerEmail || actingUser.email,
+    ownerName: list.ownerName || actingUser.displayName || 'List Owner',
+    invitedEmail: normalizedTargetEmail,
+    role,
+    status: 'pending',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  // Update local cache first
+  const currentInvites = getLocalInvitations().filter(
+    (i) => !(i.listId === list.id && i.invitedEmail.toLowerCase() === normalizedTargetEmail && i.status === 'pending')
+  );
+  saveLocalInvitations([...currentInvites, newInvitation]);
+
+  try {
+    await setDoc(invRef, {
+      ...newInvitation,
+      createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
 
+    // Record activity on the list
     const actRef = doc(collection(db, 'lists', list.id, 'activity'));
     await setDoc(actRef, {
       listId: list.id,
       userEmail: actingUser.email,
       userName: actingUser.displayName,
-      action: 'removed_member',
-      details: `Removed ${normalizedTargetEmail} from list`,
+      action: 'created_invitation',
+      details: `Sent ${role === 'editor' ? 'Editor' : 'Viewer'} invitation to ${normalizedTargetEmail} (pending acceptance)`,
       timestamp: serverTimestamp(),
     });
   } catch (err: any) {
-    console.info('Firestore remove collaborator notice:', err?.message || err);
+    console.info('Firestore create invitation notice:', err?.message || err);
+  }
+
+  return newInvitation;
+}
+
+/**
+ * Real-time subscription to invitations for a specific list (e.g. for the Share modal)
+ */
+export function subscribeListInvitations(
+  listId: string,
+  onUpdate: (invitations: ListInvitation[]) => void,
+  onError?: (err: any) => void
+) {
+  // Emit local cache matching this list immediately
+  const local = getLocalInvitations().filter(
+    (i) => i.listId === listId && i.status === 'pending'
+  );
+  onUpdate(local);
+
+  const handleLocalChange = (e: Event) => {
+    const custom = e as CustomEvent<ListInvitation[]>;
+    if (custom.detail) {
+      const filtered = custom.detail.filter(
+        (i) => i.listId === listId && i.status === 'pending'
+      );
+      onUpdate(filtered);
+    }
+  };
+  window.addEventListener('listit_invitations_changed', handleLocalChange);
+
+  let unsub = () => {};
+  try {
+    const invQuery = query(
+      collection(db, 'invitations'),
+      where('listId', '==', listId)
+    );
+
+    unsub = onSnapshot(
+      invQuery,
+      (snapshot) => {
+        const remote: ListInvitation[] = [];
+        snapshot.forEach((snap) => {
+          remote.push({ id: snap.id, ...snap.data() } as ListInvitation);
+        });
+
+        // Filter for pending
+        const pending = remote.filter((i) => i.status === 'pending');
+
+        // Merge with local storage
+        const currentLocal = getLocalInvitations();
+        const nonListLocal = currentLocal.filter((i) => i.listId !== listId);
+        saveLocalInvitations([...nonListLocal, ...remote]);
+
+        onUpdate(pending);
+      },
+      (err) => {
+        console.info('Firestore list invitations notice:', err?.message || err);
+        const fallback = getLocalInvitations().filter(
+          (i) => i.listId === listId && i.status === 'pending'
+        );
+        onUpdate(fallback);
+        if (onError) onError(err);
+      }
+    );
+  } catch (err) {
+    console.info('Firestore subscribe list invitations error:', err);
+  }
+
+  return () => {
+    window.removeEventListener('listit_invitations_changed', handleLocalChange);
+    unsub();
+  };
+}
+
+/**
+ * Real-time subscription to pending invitations for the logged-in user
+ */
+export function subscribeUserPendingInvitations(
+  userEmail: string,
+  onUpdate: (invitations: ListInvitation[]) => void,
+  onError?: (err: any) => void
+) {
+  const normalizedEmail = (userEmail || '').toLowerCase().trim();
+  if (!normalizedEmail) {
+    onUpdate([]);
+    return () => {};
+  }
+
+  // Local cache filter
+  const localPending = getLocalInvitations().filter(
+    (i) => i.invitedEmail?.toLowerCase() === normalizedEmail && i.status === 'pending'
+  );
+  onUpdate(localPending);
+
+  const handleLocalChange = (e: Event) => {
+    const custom = e as CustomEvent<ListInvitation[]>;
+    if (custom.detail) {
+      const filtered = custom.detail.filter(
+        (i) => i.invitedEmail?.toLowerCase() === normalizedEmail && i.status === 'pending'
+      );
+      onUpdate(filtered);
+    }
+  };
+  window.addEventListener('listit_invitations_changed', handleLocalChange);
+
+  let unsub = () => {};
+  try {
+    const invQuery = query(
+      collection(db, 'invitations'),
+      where('invitedEmail', '==', normalizedEmail),
+      where('status', '==', 'pending')
+    );
+
+    unsub = onSnapshot(
+      invQuery,
+      (snapshot) => {
+        const remotePending: ListInvitation[] = [];
+        snapshot.forEach((snap) => {
+          remotePending.push({ id: snap.id, ...snap.data() } as ListInvitation);
+        });
+
+        // Merge into local cache
+        const allLocal = getLocalInvitations();
+        const otherInvites = allLocal.filter(
+          (i) => !(i.invitedEmail?.toLowerCase() === normalizedEmail && i.status === 'pending')
+        );
+        saveLocalInvitations([...otherInvites, ...remotePending]);
+
+        onUpdate(remotePending);
+      },
+      (err) => {
+        console.info('Firestore user invitations notice:', err?.message || err);
+        const fallback = getLocalInvitations().filter(
+          (i) => i.invitedEmail?.toLowerCase() === normalizedEmail && i.status === 'pending'
+        );
+        onUpdate(fallback);
+        if (onError) onError(err);
+      }
+    );
+  } catch (err) {
+    console.info('Firestore subscribe user invitations error:', err);
+  }
+
+  return () => {
+    window.removeEventListener('listit_invitations_changed', handleLocalChange);
+    unsub();
+  };
+}
+
+/**
+ * Fetches an invitation by its unique ID
+ */
+export async function getInvitationById(invitationId: string): Promise<ListInvitation | null> {
+  const cached = getLocalInvitations().find((i) => i.id === invitationId);
+  try {
+    const snap = await getDoc(doc(db, 'invitations', invitationId));
+    if (snap.exists()) {
+      const data = { id: snap.id, ...snap.data() } as ListInvitation;
+      const allLocal = getLocalInvitations().filter((i) => i.id !== invitationId);
+      saveLocalInvitations([...allLocal, data]);
+      return data;
+    }
+  } catch (err) {
+    console.info('Firestore getInvitationById notice:', err);
+  }
+  return cached || null;
+}
+
+/**
+ * Accepts a list invitation, granting membership and permission to the list
+ */
+export async function acceptListInvitation(
+  invitationId: string,
+  acceptingUser: { uid: string; email: string; displayName: string }
+): Promise<string> {
+  const normalizedUserEmail = acceptingUser.email.toLowerCase().trim();
+
+  // 1. Get invitation
+  const invitation = await getInvitationById(invitationId);
+  if (!invitation) {
+    throw new Error('Invitation not found.');
+  }
+
+  if (invitation.status !== 'pending') {
+    throw new Error(`This invitation has already been ${invitation.status}.`);
+  }
+
+  if (invitation.invitedEmail.toLowerCase() !== normalizedUserEmail) {
+    throw new Error(`This invitation was sent to ${invitation.invitedEmail}. Please sign in with that email to accept.`);
+  }
+
+  const listId = invitation.listId;
+  const safeKey = sanitizeKey(normalizedUserEmail);
+
+  // 2. Update invitation status to accepted
+  const updatedInvitation: ListInvitation = {
+    ...invitation,
+    status: 'accepted',
+    acceptedAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  const localInvites = getLocalInvitations().map((i) =>
+    i.id === invitationId ? updatedInvitation : i
+  );
+  saveLocalInvitations(localInvites);
+
+  try {
+    await updateDoc(doc(db, 'invitations', invitationId), {
+      status: 'accepted',
+      acceptedAt: serverTimestamp(),
+      acceptedByUid: acceptingUser.uid,
+      updatedAt: serverTimestamp(),
+    });
+  } catch (e) {
+    console.info('Firestore update invitation status notice:', e);
+  }
+
+  // 3. Update the list document in Firestore and local cache
+  let targetList: ListModel | null = null;
+  try {
+    const listSnap = await getDoc(doc(db, 'lists', listId));
+    if (listSnap.exists()) {
+      targetList = { id: listSnap.id, ...listSnap.data() } as ListModel;
+    }
+  } catch (e) {
+    console.info('Firestore fetch list notice:', e);
+  }
+
+  if (!targetList) {
+    targetList = getLocalLists().find((l) => l.id === listId) || null;
+  }
+
+  if (!targetList) {
+    targetList = {
+      id: listId,
+      title: invitation.listTitle,
+      type: invitation.listType || 'general',
+      heading: 'other',
+      color: 'emerald',
+      icon: 'list',
+      ownerId: invitation.ownerId,
+      ownerEmail: invitation.ownerEmail,
+      ownerName: invitation.ownerName,
+      sharedWith: {},
+      memberEmails: [invitation.ownerEmail],
+      members: [invitation.ownerId],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
+  const updatedSharedWith = {
+    ...(targetList.sharedWith || {}),
+    [safeKey]: {
+      email: normalizedUserEmail,
+      name: acceptingUser.displayName || normalizedUserEmail.split('@')[0],
+      role: invitation.role,
+      addedAt: new Date().toISOString(),
+    },
+  };
+
+  const updatedMemberEmails = Array.from(
+    new Set([...(targetList.memberEmails || []), normalizedUserEmail])
+  );
+
+  const updatedMembers = Array.from(
+    new Set([...(targetList.members || []), acceptingUser.uid])
+  );
+
+  const updatedList: ListModel = {
+    ...targetList,
+    sharedWith: updatedSharedWith,
+    memberEmails: updatedMemberEmails,
+    members: updatedMembers,
+    updatedAt: new Date().toISOString() as any,
+  };
+
+  // Update local lists
+  const currentLists = getLocalLists();
+  const existsInLocal = currentLists.some((l) => l.id === listId);
+  const newLocalLists = existsInLocal
+    ? currentLists.map((l) => (l.id === listId ? updatedList : l))
+    : [updatedList, ...currentLists];
+  saveLocalLists(newLocalLists);
+
+  // Update Firestore list document
+  try {
+    const listRef = doc(db, 'lists', listId);
+    await updateDoc(listRef, {
+      sharedWith: updatedSharedWith,
+      memberEmails: updatedMemberEmails,
+      members: updatedMembers,
+      updatedAt: serverTimestamp(),
+    });
+
+    const actRef = doc(collection(db, 'lists', listId, 'activity'));
+    await setDoc(actRef, {
+      listId,
+      userEmail: normalizedUserEmail,
+      userName: acceptingUser.displayName,
+      action: 'accepted_invitation',
+      details: `${acceptingUser.displayName} accepted the invitation as ${invitation.role === 'editor' ? 'Editor' : 'Viewer'}`,
+      timestamp: serverTimestamp(),
+    });
+  } catch (err) {
+    console.info('Firestore accept invitation list update notice:', err);
+  }
+
+  return listId;
+}
+
+/**
+ * Declines a list invitation without granting access
+ */
+export async function declineListInvitation(
+  invitationId: string,
+  decliningUser: { uid?: string; email: string }
+): Promise<void> {
+  const invitation = await getInvitationById(invitationId);
+  if (!invitation) return;
+
+  const updatedInvitation: ListInvitation = {
+    ...invitation,
+    status: 'declined',
+    declinedAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  const localInvites = getLocalInvitations().map((i) =>
+    i.id === invitationId ? updatedInvitation : i
+  );
+  saveLocalInvitations(localInvites);
+
+  try {
+    await updateDoc(doc(db, 'invitations', invitationId), {
+      status: 'declined',
+      declinedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+
+    const actRef = doc(collection(db, 'lists', invitation.listId, 'activity'));
+    await setDoc(actRef, {
+      listId: invitation.listId,
+      userEmail: decliningUser.email,
+      userName: decliningUser.email.split('@')[0],
+      action: 'declined_invitation',
+      details: `${decliningUser.email} declined the invitation`,
+      timestamp: serverTimestamp(),
+    });
+  } catch (e) {
+    console.info('Firestore decline invitation notice:', e);
+  }
+}
+
+/**
+ * Cancels or revokes a pending invitation (by list owner)
+ */
+export async function cancelListInvitation(
+  invitationId: string,
+  actingUser: { email: string; displayName: string }
+): Promise<void> {
+  const invitation = await getInvitationById(invitationId);
+  if (!invitation) return;
+
+  const updatedInvitation: ListInvitation = {
+    ...invitation,
+    status: 'cancelled',
+    updatedAt: new Date().toISOString(),
+  };
+
+  const localInvites = getLocalInvitations().map((i) =>
+    i.id === invitationId ? updatedInvitation : i
+  );
+  saveLocalInvitations(localInvites);
+
+  try {
+    await updateDoc(doc(db, 'invitations', invitationId), {
+      status: 'cancelled',
+      updatedAt: serverTimestamp(),
+    });
+
+    const actRef = doc(collection(db, 'lists', invitation.listId, 'activity'));
+    await setDoc(actRef, {
+      listId: invitation.listId,
+      userEmail: actingUser.email,
+      userName: actingUser.displayName,
+      action: 'cancelled_invitation',
+      details: `Cancelled pending invitation for ${invitation.invitedEmail}`,
+      timestamp: serverTimestamp(),
+    });
+  } catch (e) {
+    console.info('Firestore cancel invitation notice:', e);
   }
 }
 
@@ -1157,39 +1717,102 @@ export function subscribeListActivity(
 }
 
 /**
- * Check if the user has permission to edit the given list
+ * Securely fetch a single list by its ID directly from Firestore.
+ * Authorization is strictly enforced by Firestore security rules.
+ */
+export async function getListById(listId: string): Promise<ListModel | null> {
+  const listRef = doc(db, 'lists', listId);
+  const snap = await getDoc(listRef);
+  if (!snap.exists()) {
+    return null;
+  }
+  return { id: snap.id, ...snap.data() } as ListModel;
+}
+
+/**
+ * Check if the user is authorized to access (view or edit) the given list
+ */
+export function isUserAuthorizedForList(
+  list: ListModel,
+  user: { uid?: string; email?: string }
+): boolean {
+  if (!list) return false;
+  const userUid = user?.uid || '';
+  const normalizedEmail = (user?.email || '').toLowerCase().trim();
+
+  if (userUid && list.ownerId === userUid) return true;
+  if (normalizedEmail && (list.ownerEmail || '').toLowerCase().trim() === normalizedEmail) return true;
+
+  if (normalizedEmail) {
+    if (list.memberEmails && list.memberEmails.some((e) => (e || '').toLowerCase().trim() === normalizedEmail)) {
+      return true;
+    }
+    const safeKey = sanitizeKey(normalizedEmail);
+    if (list.sharedWith && (list.sharedWith[safeKey] || list.sharedWith[normalizedEmail])) {
+      return true;
+    }
+    if (list.sharedWith && Object.values(list.sharedWith).some((m) => (m?.email || '').toLowerCase().trim() === normalizedEmail)) {
+      return true;
+    }
+  }
+
+  if (userUid && list.members && list.members.includes(userUid)) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Check if the user has permission to edit or view the given list
  */
 export function getUserPermission(
   list: ListModel,
-  user: { uid: string; email: string }
+  user: { uid?: string; email?: string }
 ): PermissionRole {
-  if (!list) return 'owner';
-  const normalizedEmail = (user.email || '').toLowerCase().trim();
-  const userUid = user.uid || '';
+  if (!list) return 'viewer';
+  const normalizedEmail = (user?.email || '').toLowerCase().trim();
+  const userUid = user?.uid || '';
 
-  // If user is owner
-  if (
+  // 1. If user is owner
+  const isOwner =
     (userUid && list.ownerId === userUid) ||
-    (normalizedEmail && list.ownerEmail?.toLowerCase() === normalizedEmail) ||
-    !list.ownerId ||
-    !list.ownerEmail ||
-    list.ownerId === 'user_keithfell1_gmail_com' ||
-    list.ownerEmail === 'keithfell1@gmail.com'
-  ) {
+    (normalizedEmail && (list.ownerEmail || '').toLowerCase().trim() === normalizedEmail);
+
+  if (isOwner) {
     return 'owner';
   }
 
+  if (!normalizedEmail && !userUid) {
+    return 'viewer';
+  }
+
+  // 2. Check sharedWith map (by sanitized key, direct email, or matching email inside records)
   const safeKey = sanitizeKey(normalizedEmail);
-  const sharedRecord = list.sharedWith?.[safeKey];
+  const sharedRecord =
+    list.sharedWith?.[safeKey] ||
+    list.sharedWith?.[normalizedEmail] ||
+    Object.values(list.sharedWith || {}).find(
+      (m) => (m?.email || '').toLowerCase().trim() === normalizedEmail
+    );
+
   if (sharedRecord) {
     return sharedRecord.role;
   }
 
-  if (normalizedEmail && list.memberEmails?.some((e) => e.toLowerCase() === normalizedEmail)) {
+  // 3. Check editorEmails array if present
+  const editorEmails: string[] = ((list as any).editorEmails || []).map((e: string) => (e || '').toLowerCase().trim());
+  if (normalizedEmail && editorEmails.includes(normalizedEmail)) {
     return 'editor';
   }
 
-  return 'owner';
+  // 4. In memberEmails without editor role -> viewer
+  if (normalizedEmail && list.memberEmails?.some((e) => (e || '').toLowerCase().trim() === normalizedEmail)) {
+    return 'viewer';
+  }
+
+  // Not owner and not an accepted member: default to viewer
+  return 'viewer';
 }
 
 /**
@@ -1389,30 +2012,6 @@ export async function ensureDefaultUserLists(
     estimatedPrice: 5.99,
   }, user);
 
-  // Create 1 Home list for home improvement and household tasks
-  const homeListId = await createList({
-    title: "Home",
-    description: "Household chores, repairs, organization, and home maintenance",
-    type: 'todo',
-    color: 'amber',
-    icon: 'home'
-  }, user);
-
-  await addListItem(homeListId, {
-    title: "Replace HVAC air filter",
-    completed: false,
-    priority: "medium",
-    category: "Maintenance",
-    notes: "16x25x1 filter size in the hallway vent."
-  }, user);
-
-  await addListItem(homeListId, {
-    title: "Organize pantry shelves and spice rack",
-    completed: false,
-    priority: "low",
-    category: "Organization"
-  }, user);
-
   return getLocalLists();
 }
 
@@ -1470,23 +2069,6 @@ export async function ensureStarterItemsIfEmpty(
         category: "Trader Joe's",
         priority: "medium",
         estimatedPrice: 5.99,
-      }, user);
-    }
-
-    const homeList = lists.find((l) => getListHeading(l) === 'home');
-    if (homeList && getLocalItems(homeList.id).length === 0) {
-      await addListItem(homeList.id, {
-        title: "Replace HVAC air filter",
-        completed: false,
-        priority: "medium",
-        category: "Maintenance",
-        notes: "16x25x1 filter size in the hallway vent."
-      }, user);
-      await addListItem(homeList.id, {
-        title: "Organize pantry shelves and spice rack",
-        completed: false,
-        priority: "low",
-        category: "Organization"
       }, user);
     }
 

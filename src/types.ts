@@ -16,7 +16,26 @@ export interface SharedMember {
   avatarColor?: string;
 }
 
-export type StandardHeadingKey = 'today' | 'grocery' | 'home' | 'other';
+export type InvitationStatus = 'pending' | 'accepted' | 'declined' | 'cancelled';
+
+export interface ListInvitation {
+  id: string;
+  listId: string;
+  listTitle: string;
+  listType?: ListType;
+  ownerId: string;
+  ownerEmail: string;
+  ownerName: string;
+  invitedEmail: string;
+  role: 'editor' | 'viewer';
+  status: InvitationStatus;
+  createdAt: any;
+  updatedAt?: any;
+  acceptedAt?: any;
+  declinedAt?: any;
+}
+
+export type StandardHeadingKey = 'today' | 'grocery';
 export type HeadingKey = StandardHeadingKey | string;
 
 export interface CustomHeading {
@@ -51,9 +70,13 @@ export interface ListModel {
 }
 
 export function getListHeading(list: ListModel): HeadingKey {
-  if (list.heading) return list.heading;
+  if (list.heading) {
+    if (list.heading === 'home' || list.heading === 'other') {
+      return 'today';
+    }
+    return list.heading;
+  }
   const t = (list.title || '').toLowerCase();
-  if (t === 'today' || t === "today's list" || t.includes('today')) return 'today';
   if (
     list.type === 'grocery' ||
     t.includes('grocery') ||
@@ -67,19 +90,7 @@ export function getListHeading(list: ListModel): HeadingKey {
   ) {
     return 'grocery';
   }
-  if (
-    t.includes('home') ||
-    t.includes('house') ||
-    t.includes('chore') ||
-    t.includes('yard') ||
-    t.includes('garden') ||
-    t.includes('repair') ||
-    t.includes('cleaning') ||
-    t.includes('maintenance')
-  ) {
-    return 'home';
-  }
-  return 'other';
+  return 'today';
 }
 
 export interface ListItemModel {
@@ -139,7 +150,12 @@ export interface ActivityEntry {
     | 'created_item'
     | 'deleted_item'
     | 'changed_permission'
-    | 'shared_list';
+    | 'shared_list'
+    | 'removed_member'
+    | 'created_invitation'
+    | 'accepted_invitation'
+    | 'declined_invitation'
+    | 'cancelled_invitation';
   itemTitle?: string;
   timestamp: any;
   details?: string;

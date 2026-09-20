@@ -59,9 +59,9 @@ export const TodayView: React.FC<TodayViewProps> = ({
   });
 
   const currentUser = {
-    email: (userProfile?.email || user?.email || 'keithfell1@gmail.com').toLowerCase(),
-    displayName: userProfile?.displayName || user?.displayName || 'Keith Fell',
-    uid: user?.uid || userProfile?.uid || 'user_keithfell1_gmail_com'
+    email: (userProfile?.email || user?.email || '').toLowerCase().trim(),
+    displayName: userProfile?.displayName || user?.displayName || 'User',
+    uid: user?.uid || userProfile?.uid || ''
   };
 
   const handleTransferToList = async (e: React.MouseEvent, item: ListItemModel, targetListId: string) => {
@@ -299,15 +299,15 @@ export const TodayView: React.FC<TodayViewProps> = ({
                     : 'hover:bg-slate-50/70 dark:hover:bg-slate-800/50 text-slate-900 dark:text-slate-100'
                 }`}
               >
-                {/* Checkbox & Item Info on the same line */}
-                <div className="flex items-center gap-3 min-w-0 flex-1">
+                {/* Checkbox & Item Info */}
+                <div className="flex items-start gap-3 min-w-0 flex-1 py-0.5">
                   <button
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
                       handleToggle(item);
                     }}
-                    className="transition shrink-0"
+                    className="transition shrink-0 mt-0.5"
                     style={{ color: activeAccent.primary }}
                   >
                     {item.completed ? (
@@ -320,50 +320,65 @@ export const TodayView: React.FC<TodayViewProps> = ({
                     )}
                   </button>
 
-                  <div className="flex items-center gap-2 flex-wrap min-w-0 flex-1">
-                    <span
-                      className={`text-sm font-semibold leading-tight break-words ${
-                        item.completed ? 'line-through text-slate-400 dark:text-slate-500' : ''
-                      }`}
-                    >
-                      {item.title}
-                    </span>
-
-                    {/* Quantity */}
-                    {item.quantity && (
-                      <span className="text-xs font-semibold px-2 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-md shrink-0 border border-slate-200/60 dark:border-slate-700">
-                        {item.quantity} {item.unit || ''}
-                      </span>
-                    )}
-
-                    {/* Store badge if specifically set */}
-                    {item.store && isSpecificStore(item.store) && (
-                      <span 
-                        className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md border shrink-0 flex items-center gap-0.5"
-                        style={{ 
-                          backgroundColor: activeAccent.light, 
-                          color: activeAccent.text, 
-                          borderColor: activeAccent.border 
-                        }}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span
+                        className={`text-sm font-semibold leading-tight break-words ${
+                          item.completed ? 'line-through text-slate-400 dark:text-slate-500' : ''
+                        }`}
                       >
-                        <MapPin className="w-2.5 h-2.5" style={{ color: activeAccent.primary }} />
-                        <span>{item.store}</span>
+                        {item.title}
                       </span>
-                    )}
 
-                    {/* Edit button to bring up Task Editor */}
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (parentList) onSelectItem(item, parentList);
-                      }}
-                      className="p-1 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 rounded-md transition inline-flex items-center justify-center shrink-0 border border-slate-200/60 dark:border-slate-700"
-                      title="Edit task (What, Where, When)"
-                      aria-label="Edit task"
-                    >
-                      <Edit3 className="w-3 h-3 text-slate-500 dark:text-slate-400" />
-                    </button>
+                      {/* Quantity */}
+                      {item.quantity && (
+                        <span className="text-xs font-semibold px-2 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-md shrink-0 border border-slate-200/60 dark:border-slate-700">
+                          {item.quantity} {item.unit || ''}
+                        </span>
+                      )}
+
+                      {/* Store badge if specifically set */}
+                      {item.store && isSpecificStore(item.store) && (
+                        <span 
+                          className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md border shrink-0 flex items-center gap-0.5"
+                          style={{ 
+                            backgroundColor: activeAccent.light, 
+                            color: activeAccent.text, 
+                            borderColor: activeAccent.border 
+                          }}
+                        >
+                          <MapPin className="w-2.5 h-2.5" style={{ color: activeAccent.primary }} />
+                          <span>{item.store}</span>
+                        </span>
+                      )}
+
+                      {/* Edit button to bring up Task Editor */}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (parentList) onSelectItem(item, parentList);
+                        }}
+                        className="p-1 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 rounded-md transition inline-flex items-center justify-center shrink-0 border border-slate-200/60 dark:border-slate-700"
+                        title="Edit task (What, Where, When)"
+                        aria-label="Edit task"
+                      >
+                        <Edit3 className="w-3 h-3 text-slate-500 dark:text-slate-400" />
+                      </button>
+                    </div>
+
+                    {/* More info / Notes line under item */}
+                    {item.notes && item.notes.trim() && (
+                      <p
+                        className={`text-xs mt-1 break-words leading-relaxed ${
+                          item.completed
+                            ? 'line-through text-slate-400/80 dark:text-slate-500/80'
+                            : 'text-slate-500 dark:text-slate-400'
+                        }`}
+                      >
+                        {item.notes}
+                      </p>
+                    )}
                   </div>
                 </div>
 

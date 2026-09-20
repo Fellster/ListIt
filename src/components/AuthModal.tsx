@@ -1,6 +1,18 @@
 import React, { useState } from 'react';
-import { useAuth } from '../context/AuthContext';
-import { LogIn, UserPlus, Sparkles, Mail, Lock, User, AlertCircle, ArrowRight } from 'lucide-react';
+import { useAuth, getAvatarColor, getInitials } from '../context/AuthContext';
+import { 
+  LogIn, 
+  UserPlus, 
+  Mail, 
+  Lock, 
+  User, 
+  AlertCircle, 
+  X, 
+  Check, 
+  ArrowRight,
+  ShieldCheck,
+  Sparkles
+} from 'lucide-react';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -9,7 +21,7 @@ interface AuthModalProps {
 }
 
 export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMode = 'signin' }) => {
-  const { signInWithGoogle, signInWithEmail, signUpWithEmail, signInAsDemoUser } = useAuth();
+  const { signInWithGoogle, signInWithEmail, signUpWithEmail, signInAsDemoUser, user, userProfile } = useAuth();
   const [mode, setMode] = useState<'signin' | 'signup'>(initialMode);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -18,6 +30,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
   const [loading, setLoading] = useState(false);
 
   if (!isOpen) return null;
+
+  const currentEmail = (userProfile?.email || user?.email || '').toLowerCase().trim();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -52,7 +66,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
         err?.message?.toLowerCase().includes('popup-closed-by-user') ||
         err?.message?.toLowerCase().includes('popup window closed')
       ) {
-        // User closed or dismissed the popup
         return;
       }
       setError(err.message || 'Google sign-in was not completed.');
@@ -75,43 +88,121 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-      <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-100 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-        {/* Header */}
-        <div className="p-6 bg-gradient-to-br from-emerald-600 to-teal-700 text-white relative">
-          <button
-            onClick={onClose}
-            className="absolute top-4 right-4 text-white/80 hover:text-white text-xl p-1 rounded-full hover:bg-white/10"
-          >
-            &times;
-          </button>
-          <div className="w-12 h-12 rounded-xl bg-white/20 backdrop-blur-md flex items-center justify-center mb-3">
-            <Sparkles className="w-6 h-6 text-emerald-100" />
-          </div>
-          <h2 className="text-2xl font-bold tracking-tight">
-            {mode === 'signin' ? 'Welcome Back to ListIt' : 'Create your ListIt Account'}
+    <div 
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-md animate-in fade-in duration-200"
+      onClick={(e) => {
+        if (e.target === e.currentTarget && !loading) onClose();
+      }}
+    >
+      <div 
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="auth-sheet-title"
+        className="relative w-full max-w-[460px] bg-[#fbfbfd] dark:bg-[#1c1c1e] text-slate-900 dark:text-slate-100 rounded-[28px] shadow-2xl border border-black/[0.06] dark:border-white/[0.08] overflow-hidden flex flex-col max-h-[88vh] tracking-tight antialiased animate-in zoom-in-95 duration-200"
+      >
+        {/* Apple-style Navigation Bar */}
+        <div className="relative px-5 pt-4 pb-3 flex items-center justify-between border-b border-black/[0.05] dark:border-white/[0.07] bg-white/70 dark:bg-[#242426]/70 backdrop-blur-xl">
+          <div className="w-7" /> {/* Left balance spacer */}
+          
+          <h2 id="auth-sheet-title" className="text-sm font-semibold text-slate-900 dark:text-white flex items-center gap-1.5">
+            {mode === 'signin' ? (
+              <>
+                <LogIn className="w-4 h-4 text-[#0071e3]" />
+                <span>Sign In</span>
+              </>
+            ) : (
+              <>
+                <UserPlus className="w-4 h-4 text-[#0071e3]" />
+                <span>Create Account</span>
+              </>
+            )}
           </h2>
-          <p className="text-emerald-100 text-sm mt-1">
-            Real-time collaborative shopping & task lists with instant sharing.
-          </p>
+
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={loading}
+            aria-label="Close"
+            className="w-7 h-7 rounded-full bg-slate-200/60 hover:bg-slate-200 dark:bg-white/10 dark:hover:bg-white/20 flex items-center justify-center text-slate-500 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white transition-all active:scale-90 disabled:opacity-40"
+          >
+            <X className="w-3.5 h-3.5 stroke-[2.5]" />
+          </button>
         </div>
 
-        <div className="p-6 space-y-5">
+        {/* Modal Body */}
+        <div className="p-5 overflow-y-auto space-y-4 text-[13px] leading-normal">
+          {/* Header Brand / App Card */}
+          <div className="bg-white dark:bg-[#252528] rounded-2xl p-3.5 shadow-xs border border-black/[0.04] dark:border-white/[0.06] flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-[#0071e3]/10 border border-[#0071e3]/20 flex items-center justify-center text-[#0071e3] shrink-0 shadow-xs">
+              <Sparkles className="w-5 h-5" />
+            </div>
+
+            <div className="min-w-0 flex-1">
+              <div className="text-[11px] text-slate-400 dark:text-slate-500 font-medium">
+                ListIt Account
+              </div>
+              <h3 className="text-sm font-semibold text-slate-900 dark:text-white truncate">
+                {mode === 'signin' ? 'Welcome Back' : 'Get Started'}
+              </h3>
+            </div>
+
+            <div className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1 font-medium bg-slate-100 dark:bg-white/[0.08] px-2.5 py-1 rounded-full">
+              <ShieldCheck className="w-3 h-3 text-emerald-500" />
+              <span>Real-Time</span>
+            </div>
+          </div>
+
+          {/* Mode Switcher Segmented Control */}
+          <div className="bg-white dark:bg-[#252528] rounded-2xl p-1 shadow-xs border border-black/[0.04] dark:border-white/[0.06] flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => {
+                setMode('signin');
+                setError('');
+              }}
+              className={`flex-1 py-1.5 text-xs font-semibold rounded-xl transition-all flex items-center justify-center gap-1.5 ${
+                mode === 'signin'
+                  ? 'bg-slate-100 dark:bg-white/[0.12] text-slate-900 dark:text-white shadow-xs'
+                  : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+              }`}
+            >
+              <LogIn className="w-3.5 h-3.5" />
+              <span>Sign In</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setMode('signup');
+                setError('');
+              }}
+              className={`flex-1 py-1.5 text-xs font-semibold rounded-xl transition-all flex items-center justify-center gap-1.5 ${
+                mode === 'signup'
+                  ? 'bg-slate-100 dark:bg-white/[0.12] text-slate-900 dark:text-white shadow-xs'
+                  : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+              }`}
+            >
+              <UserPlus className="w-3.5 h-3.5" />
+              <span>Create Account</span>
+            </button>
+          </div>
+
+          {/* Error Notice */}
           {error && (
-            <div className="flex items-start gap-2 p-3 text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-xl">
-              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-              <span>{error}</span>
+            <div className="px-3.5 py-2.5 bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 rounded-2xl border border-rose-200/60 dark:border-rose-900/40 flex items-center gap-2 text-xs animate-in fade-in">
+              <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+              <span className="truncate">{error}</span>
             </div>
           )}
 
-          {/* Google Sign-in */}
+          {/* Google Sign-In Button */}
           <button
             type="button"
             onClick={handleGoogle}
             disabled={loading}
-            className="w-full flex items-center justify-center gap-3 py-3 px-4 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl text-slate-700 font-medium shadow-xs hover:shadow transition disabled:opacity-60"
+            className="w-full flex items-center justify-center gap-2.5 py-2.5 px-4 bg-white dark:bg-[#252528] hover:bg-slate-50 dark:hover:bg-white/[0.08] border border-black/[0.08] dark:border-white/[0.08] rounded-2xl text-[13px] font-semibold text-slate-800 dark:text-white shadow-xs transition active:scale-[0.99] disabled:opacity-50 cursor-pointer"
           >
-            <svg className="w-5 h-5" viewBox="0 0 24 24">
+            <svg className="w-4 h-4" viewBox="0 0 24 24">
               <path
                 fill="#4285F4"
                 d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
@@ -129,54 +220,61 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                 d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
               />
             </svg>
-            Continue with Google
+            <span>Continue with Google</span>
           </button>
 
-          <div className="relative flex items-center justify-center">
-            <div className="border-t border-slate-200 w-full"></div>
-            <span className="bg-white px-3 text-xs text-slate-400 uppercase tracking-wider font-medium shrink-0">
+          {/* Apple Inset Divider */}
+          <div className="relative flex items-center justify-center py-0.5">
+            <div className="border-t border-black/[0.06] dark:border-white/[0.08] w-full" />
+            <span className="bg-[#fbfbfd] dark:bg-[#1c1c1e] px-3 text-[11px] text-slate-400 dark:text-slate-500 font-medium uppercase tracking-wider shrink-0">
               Or with email
             </span>
           </div>
 
-          {/* Email / Password Form */}
-          <form onSubmit={handleSubmit} className="space-y-3.5">
+          {/* Form */}
+          <form onSubmit={handleSubmit} className="space-y-3">
             {mode === 'signup' && (
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">Your Name</label>
+              <div className="space-y-1">
+                <label className="text-[11px] font-medium text-slate-400 dark:text-slate-500 uppercase tracking-normal px-1">
+                  Full Name
+                </label>
                 <div className="relative">
-                  <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
+                  <User className="w-4 h-4 text-slate-400 dark:text-slate-500 absolute left-3.5 top-3" />
                   <input
                     type="text"
                     required
                     value={name}
                     onChange={(e) => setName(e.target.value)}
-                    placeholder="e.g. Keith Fell"
-                    className="w-full pl-10 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition"
+                    placeholder="e.g. Alex Rivera"
+                    className="w-full pl-10 pr-3.5 py-2 bg-white dark:bg-[#252528] border border-black/[0.06] dark:border-white/[0.08] rounded-xl text-[13px] text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-[#0071e3]/40 focus:border-[#0071e3] transition shadow-xs"
                   />
                 </div>
               </div>
             )}
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1">Email Address</label>
+            <div className="space-y-1">
+              <label className="text-[11px] font-medium text-slate-400 dark:text-slate-500 uppercase tracking-normal px-1">
+                Email Address
+              </label>
               <div className="relative">
-                <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
+                <Mail className="w-4 h-4 text-slate-400 dark:text-slate-500 absolute left-3.5 top-3" />
                 <input
                   type="email"
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="you@example.com"
-                  className="w-full pl-10 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition"
+                  className="w-full pl-10 pr-3.5 py-2 bg-white dark:bg-[#252528] border border-black/[0.06] dark:border-white/[0.08] rounded-xl text-[13px] text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-[#0071e3]/40 focus:border-[#0071e3] transition shadow-xs"
                 />
               </div>
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1">Password</label>
+            <div className="space-y-1">
+              <label className="text-[11px] font-medium text-slate-400 dark:text-slate-500 uppercase tracking-normal px-1">
+                Password
+              </label>
               <div className="relative">
-                <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
+                <Lock className="w-4 h-4 text-slate-400 dark:text-slate-500 absolute left-3.5 top-3" />
                 <input
                   type="password"
                   required
@@ -184,7 +282,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="At least 6 characters"
-                  className="w-full pl-10 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition"
+                  className="w-full pl-10 pr-3.5 py-2 bg-white dark:bg-[#252528] border border-black/[0.06] dark:border-white/[0.08] rounded-xl text-[13px] text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-[#0071e3]/40 focus:border-[#0071e3] transition shadow-xs"
                 />
               </div>
             </div>
@@ -192,83 +290,91 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-3 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-xl shadow-md shadow-emerald-600/20 transition flex items-center justify-center gap-2 disabled:opacity-60"
+              className="w-full py-2.5 px-4 bg-[#0071e3] hover:bg-[#0077ed] text-white font-semibold text-[13px] rounded-2xl shadow-xs transition active:scale-[0.99] flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer mt-1"
             >
               {loading ? (
-                <span>Processing...</span>
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
               ) : mode === 'signin' ? (
                 <>
-                  <LogIn className="w-4 h-4" /> Sign In
+                  <LogIn className="w-4 h-4" />
+                  <span>Sign In</span>
                 </>
               ) : (
                 <>
-                  <UserPlus className="w-4 h-4" /> Create Account
+                  <UserPlus className="w-4 h-4" />
+                  <span>Create Account</span>
                 </>
               )}
             </button>
           </form>
 
-          {/* Toggle Sign In / Sign Up */}
-          <div className="text-center text-xs text-slate-500">
-            {mode === 'signin' ? (
-              <span>
-                Don't have an account?{' '}
-                <button
-                  type="button"
-                  onClick={() => setMode('signup')}
-                  className="text-emerald-600 hover:text-emerald-700 font-semibold underline underline-offset-2"
-                >
-                  Create one now
-                </button>
+          {/* Quick Demo Switcher - iOS Inset List Style */}
+          <div className="space-y-1.5 pt-1">
+            <div className="flex items-center justify-between px-1">
+              <span className="text-[11px] font-medium text-slate-400 dark:text-slate-500 tracking-normal uppercase">
+                Demo Accounts
               </span>
-            ) : (
-              <span>
-                Already have an account?{' '}
-                <button
-                  type="button"
-                  onClick={() => setMode('signin')}
-                  className="text-emerald-600 hover:text-emerald-700 font-semibold underline underline-offset-2"
-                >
-                  Sign in
-                </button>
-              </span>
-            )}
-          </div>
-
-          {/* Quick Demo Switcher for Easy Real-Time Sharing Testing */}
-          <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200/80">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-semibold text-slate-700">Quick Demo Accounts</span>
-              <span className="text-[10px] text-slate-400 bg-white px-1.5 py-0.5 rounded border border-slate-200">
-                1-Click test
+              <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">
+                1-Tap Persona Switch
               </span>
             </div>
-            <p className="text-[11px] text-slate-500 mb-2.5">
-              Switch personas instantly to test real-time collaboration & permission controls between owner and collaborators:
-            </p>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => handleQuickDemo('Keith Fell', 'keithfell1@gmail.com')}
-                className="text-left p-2 bg-white hover:bg-emerald-50 border border-slate-200 hover:border-emerald-300 rounded-lg transition text-xs group"
-              >
-                <div className="font-medium text-slate-800 group-hover:text-emerald-700 flex items-center justify-between">
-                  <span>Keith (Owner)</span>
-                  <ArrowRight className="w-3 h-3 opacity-0 group-hover:opacity-100 text-emerald-600 transition" />
-                </div>
-                <div className="text-[10px] text-slate-400 truncate">keithfell1@gmail.com</div>
-              </button>
-              <button
-                type="button"
-                onClick={() => handleQuickDemo('Alex Rivera', 'alex.rivera@example.com')}
-                className="text-left p-2 bg-white hover:bg-emerald-50 border border-slate-200 hover:border-emerald-300 rounded-lg transition text-xs group"
-              >
-                <div className="font-medium text-slate-800 group-hover:text-emerald-700 flex items-center justify-between">
-                  <span>Alex (Collaborator)</span>
-                  <ArrowRight className="w-3 h-3 opacity-0 group-hover:opacity-100 text-emerald-600 transition" />
-                </div>
-                <div className="text-[10px] text-slate-400 truncate">alex.rivera@example.com</div>
-              </button>
+
+            <div className="bg-white dark:bg-[#252528] rounded-2xl p-2.5 shadow-xs border border-black/[0.04] dark:border-white/[0.06] space-y-1.5">
+              {[
+                { name: 'Alex Rivera', email: 'alex.owner@example.com', role: 'Owner' },
+                { name: 'Jordan Taylor', email: 'jordan.invited@example.com', role: 'Invited Member' },
+              ].map((account) => {
+                const isSelected = currentEmail === account.email.toLowerCase();
+                const avatarBg = getAvatarColor(account.email);
+                const initials = getInitials(account.name);
+
+                return (
+                  <button
+                    key={account.email}
+                    type="button"
+                    onClick={() => handleQuickDemo(account.name, account.email)}
+                    disabled={loading}
+                    className={`w-full flex items-center justify-between p-2 rounded-xl transition text-left active:scale-[0.99] ${
+                      isSelected
+                        ? 'bg-slate-100 dark:bg-white/[0.1] border border-black/[0.06] dark:border-white/[0.08]'
+                        : 'hover:bg-slate-50 dark:hover:bg-white/[0.04]'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div
+                        className="w-7 h-7 rounded-full flex items-center justify-center text-white text-[11px] font-semibold shrink-0 shadow-xs"
+                        style={{ backgroundColor: avatarBg }}
+                      >
+                        {initials}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-xs font-semibold text-slate-900 dark:text-white truncate flex items-center gap-1.5">
+                          <span>{account.name}</span>
+                          <span className="text-[10px] font-normal text-slate-400 dark:text-slate-500">
+                            ({account.role})
+                          </span>
+                        </div>
+                        <div className="text-[10px] text-slate-400 dark:text-slate-500 truncate">
+                          {account.email}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="shrink-0 flex items-center gap-1">
+                      {isSelected ? (
+                        <div className="w-5 h-5 rounded-full bg-emerald-500 text-white flex items-center justify-center">
+                          <Check className="w-3 h-3 stroke-[3]" />
+                        </div>
+                      ) : (
+                        <div className="text-[11px] text-[#0071e3] font-medium flex items-center gap-0.5">
+                          <span>Switch</span>
+                          <ArrowRight className="w-3 h-3" />
+                        </div>
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>

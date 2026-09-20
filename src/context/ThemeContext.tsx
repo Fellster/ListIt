@@ -6,6 +6,7 @@ interface ThemeContextType {
   setTheme: (theme: ThemeConfig) => void;
   updateTheme: (partial: Partial<ThemeConfig>) => void;
   activeAccent: typeof ACCENT_PALETTES[0];
+  bgThemeClass: string;
   resetToDefaults: () => void;
 }
 
@@ -94,8 +95,10 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setThemeState(DEFAULT_THEME);
   };
 
+  const bgThemeClass = `theme-bg-${theme.backgroundPattern || 'mesh'}`;
+
   return (
-    <ThemeContext.Provider value={{ theme, setTheme, updateTheme, activeAccent, resetToDefaults }}>
+    <ThemeContext.Provider value={{ theme, setTheme, updateTheme, activeAccent, bgThemeClass, resetToDefaults }}>
       {children}
     </ThemeContext.Provider>
   );

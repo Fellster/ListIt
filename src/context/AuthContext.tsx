@@ -106,22 +106,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const saved = localStorage.getItem('listit_active_profile');
         if (saved) {
           try {
-            setUserProfile(JSON.parse(saved));
+            const parsed = JSON.parse(saved);
+            // If the saved profile was the legacy hardcoded Keith, clean it up
+            if (parsed?.email?.toLowerCase().includes('keithfell1@gmail.com') || parsed?.uid === 'user_keithfell1_gmail_com') {
+              localStorage.removeItem('listit_active_profile');
+              setUserProfile(null);
+            } else {
+              setUserProfile(parsed);
+            }
           } catch (e) {
-            setUserProfile({
-              uid: 'user_keithfell1_gmail_com',
-              email: 'keithfell1@gmail.com',
-              displayName: 'Keith Fell'
-            });
+            localStorage.removeItem('listit_active_profile');
+            setUserProfile(null);
           }
         } else {
-          const defaultProf: UserProfile = {
-            uid: 'user_keithfell1_gmail_com',
-            email: 'keithfell1@gmail.com',
-            displayName: 'Keith Fell'
-          };
-          localStorage.setItem('listit_active_profile', JSON.stringify(defaultProf));
-          setUserProfile(defaultProf);
+          setUserProfile(null);
         }
       }
       setLoading(false);

@@ -67,16 +67,6 @@ export const HeadingDirectoryView: React.FC<HeadingDirectoryViewProps> = ({
           emptyMessage: 'No grocery lists yet',
           emptyPrompt: 'Create your first grocery list for Costco, Trader Joe’s, or local supermarkets.',
         };
-      case 'home':
-        return {
-          title: 'Home Lists',
-          singularTitle: 'Home List',
-          icon: <Home className="w-5 h-5 text-amber-500" />,
-          placeholder: 'e.g. Yard Work, Home Maintenance, Spring Cleaning, Kitchen Remodel',
-          description: 'Household chores, maintenance tasks, repairs, and home improvements',
-          emptyMessage: 'No home lists yet',
-          emptyPrompt: 'Create your first home list for chores, repairs, organization, or garden work.',
-        };
       case 'today':
         return {
           title: 'Today Lists',
@@ -86,16 +76,6 @@ export const HeadingDirectoryView: React.FC<HeadingDirectoryViewProps> = ({
           description: 'Custom task lists and daily routines scheduled for today',
           emptyMessage: 'No custom today lists yet',
           emptyPrompt: "Create a focused list for today's errands, routines, or priority goals.",
-        };
-      case 'other':
-        return {
-          title: 'Other Lists',
-          singularTitle: 'List',
-          icon: <FolderOpen className="w-5 h-5 text-indigo-500" />,
-          placeholder: 'e.g. Vacation Packing, Books to Read, Project Ideas, Gifts',
-          description: 'Custom checklists, projects, personal notes, and general lists',
-          emptyMessage: 'No other lists yet',
-          emptyPrompt: 'Create a custom list for projects, packing, reading, or notes.',
         };
       default: {
         const display = headingLabel || customHeadingObj?.label || (typeof h === 'string' ? h : 'Custom');
