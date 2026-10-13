@@ -12,6 +12,6 @@
 .redesign.theme-plaid-pink header,.redesign.theme-plaid-khaki header,.redesign.theme-plaid-pink .r-notice,.redesign.theme-plaid-khaki .r-notice,.redesign.theme-plaid-pink .r-area-title,.redesign.theme-plaid-khaki .r-area-title,.redesign.theme-plaid-pink .r-toolbar,.redesign.theme-plaid-khaki .r-toolbar,.redesign.theme-plaid-pink .r-empty,.redesign.theme-plaid-khaki .r-empty,.redesign.theme-plaid-pink .r-status,.redesign.theme-plaid-khaki .r-status,.redesign.theme-plaid-pink .r-shared-with,.redesign.theme-plaid-khaki .r-shared-with{background:var(--bg);padding:8px 10px;border-radius:8px}
 .redesign.theme-plaid-pink .r-entry,.redesign.theme-plaid-khaki .r-entry{background:var(--bg)}
 /* Frosted cards let the plaid show through without competing with item text. */
-.redesign.theme-plaid-pink .r-card{background:rgba(255,248,245,.67);backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px)}
-.redesign.theme-plaid-khaki .r-card{background:rgba(255,253,245,.67);backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px)}
+.redesign.theme-plaid-pink .r-card{background:rgba(255,248,245,.50);backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px)}
+.redesign.theme-plaid-khaki .r-card{background:rgba(255,253,245,.50);backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px)}
 .redesign.theme-plaid-pink .r-item,.redesign.theme-plaid-khaki .r-item{background:transparent}
