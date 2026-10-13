@@ -11,3 +11,5 @@ Next: Firebase identity and authoritative persistence; invitation acceptance and
 Validation: TypeScript and production build; default-list and calendar rollover/escaping validation passed. Browser smoke script provided in tests/redesign-smoke.cjs, but not executed successfully here because Chromium is unavailable. Microphone/OCR/calendar import require device testing.
 
 Run `npm install`, `npm run dev`, then open the preview. Browser smoke test requires Playwright and Chromium and a server at port 3000.
+
+Personal and Work navigation now shows only the selected group’s lists. Settings includes an Open app in preference. First use still has one Personal To-Do list; Work starts empty. The preference persists locally and is applied on reload.
