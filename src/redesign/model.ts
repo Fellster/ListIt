@@ -1,6 +1,6 @@
 export type Item = { id: string; title: string; done: boolean; fields: Record<string,string> };
-export type List = { id: string; name: string; template: string; group: string; theme?: string; items: Item[] };
-export type State = { version: 1; defaultTheme: string; openingGroup?: string; lists: List[] };
+export type List = { id: string; name: string; template: string; group: string; theme?: string; font?: string; items: Item[] };
+export type State = { version: 1; defaultTheme: string; defaultFont?: string; openingGroup?: string; lists: List[] };
 export const templates = { Personal: ['Grocery','TV','Vacations','Household chores','Books','Birthdays','Payments','Other'], Work: ['To-Do','Projects','Other'] };
 export const fields: Record<string,string[]> = { Grocery:['Store','Quantity','Category','Notes'], TV:['Streaming service','Season','Episode','Next season date','Notes'], Books:['Author','Status','Notes'], Birthdays:['Date','Notes'], Payments:['Date','Amount','Notes'], Vacations:['Where','Date','Notes'], 'Household chores':['Where','Date','Priority','Notes'], Projects:['Where','Date','Priority','Notes'], 'To-Do':['Where','Date','Time','Duration minutes','Priority','Notes'], Other:['Where','Date','Notes'] };
 export const fresh = (): State => ({version:1,defaultTheme:'blue',lists:[{id:crypto.randomUUID(),name:'To-Do',template:'To-Do',group:'Personal',items:[]}]});
