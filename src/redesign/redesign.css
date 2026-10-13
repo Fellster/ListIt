@@ -3,3 +3,4 @@
 .r-areas{display:flex;gap:4px;background:var(--card);border-radius:10px;padding:4px;margin:18px 0 14px}.r-areas button{flex:1}.r-areas button[aria-pressed=true]{background:var(--accent);color:white}.r-area-title{font-size:20px;font-weight:500;margin:0 0 12px}
 .redesign{font-family:Inter,system-ui,sans-serif}.redesign .r-item span,.redesign .r-entry input,.redesign .r-details input,.redesign .r-summary{font-family:var(--list-font,Inter,sans-serif)}.redesign .r-item span,.redesign .r-entry input{font-size:18px}.redesign .r-summary{font-size:14px}
 .r-cloud-status{max-width:620px;margin:12px auto;padding:12px;font:13px/1.5 system-ui;display:flex;gap:8px;flex-wrap:wrap;align-items:center}.r-cloud-status button{padding:6px 10px;border-radius:7px;border:1px solid #bbc3d2;background:#f2f4f8}
+.r-edit-surface{border:0;margin:0;padding:0;min-width:0}.r-edit-surface:disabled{opacity:.8}
