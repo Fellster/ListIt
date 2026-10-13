@@ -13,3 +13,8 @@ Validation: TypeScript and production build; default-list and calendar rollover/
 Run `npm install`, `npm run dev`, then open the preview. Browser smoke test requires Playwright and Chromium and a server at port 3000.
 
 Personal and Work navigation now shows only the selected group’s lists. Settings includes an Open app in preference. First use still has one Personal To-Do list; Work starts empty. The preference persists locally and is applied on reload.
+
+## Account storage stage
+The preview now requires Firebase email/password or Google sign-in. Redesigned lists and preferences are stored in the signed-in user document under listitRedesign, with a listitRevision transaction guard. Existing profile fields and original app collections are preserved. The existing /users/{uid} rule is owner-only; no live rules were deployed. Sharing remains disabled. Local-only preview data is retained in the browser but not automatically imported into any account. A transaction conflict leaves edits in the current page and blocks overwrite; reload explicitly discards unsaved edits. Save status and retry are shown.
+
+Cross-account isolation, Firebase provider configuration, preview authorized domains, password resets, cross-device updates, network recovery and conflicts require live testing before merging. The prior browser smoke script targets the former local-only preview and must be adapted for authenticated fixtures.
