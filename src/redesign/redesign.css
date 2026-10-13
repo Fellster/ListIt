@@ -21,3 +21,5 @@
 .redesign:is(.theme-plaid-pink,.theme-plaid-khaki) :is(header,.r-notice,.r-area-title,.r-toolbar,.r-empty,.r-status,.r-shared-with,.r-entry,.r-panel,.r-areas,.r-card,.r-filters>input,.r-filters>select){backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px)}
 .redesign:is(.theme-plaid-pink,.theme-plaid-khaki) :is(.r-entry input,.r-entry button,.r-actions button,.r-item,.r-check:not(.checked)){background:transparent}
 .redesign:is(.theme-plaid-pink,.theme-plaid-khaki) :is(nav button[aria-pressed=true],.r-areas button[aria-pressed=true],button.primary,.r-check.checked){background:var(--accent);color:white}
+.r-comments .r-comment-save{margin-top:8px}.r-comment-hint{display:block;margin-top:6px;color:var(--muted)}
+.redesign .r-comments button.r-comment-save.primary{background:var(--accent);color:white;font-weight:600;border:1px solid var(--accent)}
