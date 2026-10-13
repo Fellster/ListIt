@@ -15,3 +15,9 @@
 .redesign.theme-plaid-pink .r-card{background:rgba(255,248,245,.50);backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px)}
 .redesign.theme-plaid-khaki .r-card{background:rgba(255,253,245,.50);backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px)}
 .redesign.theme-plaid-pink .r-item,.redesign.theme-plaid-khaki .r-item{background:transparent}
+/* Apply the cloudy finish throughout plaid themes; keep selected accents solid. */
+.redesign.theme-plaid-pink{--bg:rgba(251,245,243,.50);--card:rgba(255,248,245,.50)}
+.redesign.theme-plaid-khaki{--bg:rgba(250,247,238,.50);--card:rgba(255,253,245,.50)}
+.redesign:is(.theme-plaid-pink,.theme-plaid-khaki) :is(header,.r-notice,.r-area-title,.r-toolbar,.r-empty,.r-status,.r-shared-with,.r-entry,.r-panel,.r-areas,.r-card,.r-filters>input,.r-filters>select){backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px)}
+.redesign:is(.theme-plaid-pink,.theme-plaid-khaki) :is(.r-entry input,.r-entry button,.r-actions button,.r-item,.r-check:not(.checked)){background:transparent}
+.redesign:is(.theme-plaid-pink,.theme-plaid-khaki) :is(nav button[aria-pressed=true],.r-areas button[aria-pressed=true],button.primary,.r-check.checked){background:var(--accent);color:white}
