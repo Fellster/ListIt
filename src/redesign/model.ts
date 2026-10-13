@@ -1,6 +1,6 @@
 export type Item = { id: string; title: string; done: boolean; fields: Record<string,string> };
 export type List = { id: string; name: string; template: string; group: string; sharedId?: string; theme?: string; font?: string; items: Item[] };
-export type State = { version: 1; defaultTheme: string; defaultFont?: string; openingGroup?: string; lists: List[] };
+export type State = { version: 1; defaultTheme: string; defaultFont?: string; openingGroup?: string; listOrder?: string[]; lists: List[] };
 export const templates = { Personal: ['Grocery','TV','Vacations','Household chores','Books','Birthdays','Payments','Other'], Work: ['To-Do','Projects','Other'] };
 export const fields: Record<string,string[]> = { Grocery:['Store','Quantity','Category','Notes'], TV:['Streaming service','Season','Episode','Next season date','Notes'], Books:['Author','Status','Notes'], Birthdays:['Date','Notes'], Payments:['Date','Amount','Notes'], Vacations:['Where','Date','Notes'], 'Household chores':['Where','Date','Priority','Notes'], Projects:['Where','Date','Priority','Notes'], 'To-Do':['Where','Date','Time','Duration minutes','Priority','Notes'], Other:['Where','Date','Notes'] };
 export const fresh = (): State => ({version:1,defaultTheme:'blue',lists:[{id:crypto.randomUUID(),name:'To-Do',template:'To-Do',group:'Personal',items:[]}]});
@@ -15,3 +15,6 @@ export function calendarFile(item:Item) {
  const end=time?`DTEND:${endDay}T${String(endDate.getHours()).padStart(2,'0')}${String(endDate.getMinutes()).padStart(2,'0')}00`:`DTEND;VALUE=DATE:${endDay}`;
  return ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//ListIt//Calendar//EN','BEGIN:VEVENT',`UID:${item.id}@listit`,`DTSTAMP:${new Date().toISOString().replace(/[-:]/g,'').replace(/\.\d+Z/,'Z')}`,start,end,`SUMMARY:${escapeCalendar(item.title)}`,`LOCATION:${escapeCalendar(item.fields.Where||'')}`,`DESCRIPTION:${escapeCalendar(item.fields.Notes||'')}`,'END:VEVENT','END:VCALENDAR',''].join('\r\n');
 }
+
+export function reorderTabs(order:string[],source:string,target:string){if(source===target||!order.includes(source)||!order.includes(target))return order;const next=order.filter(id=>id!==source);next.splice(order.indexOf(target),0,source);return next;}
+export function orderedLists(lists:List[],order:string[]=[]){const ranks=new Map(order.map((id,index)=>[id,index]));return [...lists].sort((a,b)=>(ranks.get(a.id)??order.length)-(ranks.get(b.id)??order.length));}
