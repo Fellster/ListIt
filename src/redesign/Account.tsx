@@ -7,7 +7,7 @@ import Redesign from './Redesign';
 import SharedHub from './SharedHub';
 
 export default function Account(){const [user,setUser]=useState<User|null>(null);const [ready,setReady]=useState(false);const [mode,setMode]=useState('signin');const [email,setEmail]=useState('');const [password,setPassword]=useState('');const [repeat,setRepeat]=useState('');const [message,setMessage]=useState('');const [busy,setBusy]=useState(false);
-useEffect(()=>onAuthStateChanged(auth,u=>{setUser(u&&!u.isAnonymous?u:null);setReady(true)}),[]);
+useEffect(()=>onAuthStateChanged(auth,u=>{if(u&&!u.isAnonymous){void u.getIdToken(true).then(()=>{setUser(u);setReady(true)}).catch(()=>{setUser(u);setReady(true)})}else{setUser(null);setReady(true)}}),[]);
 async function action(fn:()=>Promise<unknown>){setBusy(true);setMessage('');try{await fn()}catch(e){setMessage((e as Error).message)}finally{setBusy(false)}}
 if(!ready)return <main className="redesign">Loading account…</main>;
 if(user&&!user.emailVerified)return <main className="redesign"><h2>Verify your email</h2><p>Verify {user.email} before sharing lists.</p><button disabled={busy} onClick={()=>void action(async()=>{await sendEmailVerification(user,{url:location.origin+'/?preview=redesign'});setMessage('Verification email sent. Check your inbox.')})}>Send verification email</button><button onClick={()=>void action(async()=>{await user.reload();setUser(auth.currentUser);if(auth.currentUser?.emailVerified)location.reload();else setMessage('Email is not verified yet.')})}>I verified my email</button><button onClick={()=>void signOut(auth)}>Sign out</button><p role="status">{message}</p></main>;

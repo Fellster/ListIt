@@ -8,6 +8,7 @@ const stranger=env.authenticatedContext('stranger',{email:'other@example.com',em
 const unverified=env.authenticatedContext('unverified',{email:'target@example.com',email_verified:false}).firestore();
 const shared=(db)=>doc(db,'listitSharedLists','list1');const inv=(db)=>doc(db,'listitInvitations','list1_target@example.com');
 try{
+await assertSucceeds(getDocs(query(collection(target,'listitSharedLists'),where('ownerId','==','target'))));
 await assertSucceeds(setDoc(shared(owner),{ownerId:'owner',ownerEmail:'owner@example.com',list:{id:'list1',name:'Groceries',items:[]},revision:0}));
 await assertSucceeds(setDoc(inv(owner),{listId:'list1',listName:'Groceries',ownerId:'owner',ownerEmail:'owner@example.com',email:'target@example.com',role:'viewer',status:'pending',expiresAt:Date.now()+600000}));
 await assertSucceeds(getDocs(query(collection(owner,'listitSharedLists'),where('ownerId','==','owner'))));await assertSucceeds(getDocs(query(collection(target,'listitInvitations'),where('email','==','target@example.com'))));await assertSucceeds(getDocs(query(collection(owner,'listitInvitations'),where('ownerId','==','owner'))));
