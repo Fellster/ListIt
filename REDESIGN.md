@@ -25,3 +25,6 @@ New collections: listitSharedLists and listitInvitations, plus per-list comments
 Rules test: npm install --no-save @firebase/rules-unit-testing@5 firebase-tools@14; npx firebase emulators:exec --project demo-listit --config firebase.sharing-test.json --only firestore 'node tests/sharing-rules.mjs'. Never deploy rules until the tests pass.
 
 Validation: Firestore emulator rules tests passed for pending access, verified email, Viewer/Commenter/Editor roles, ownership, revocation and self role escalation. Invitation acceptance expires after seven days. Email delivery is manual via copied links.
+
+## Unified shared tabs
+Shared records now replace private pointers in the ordinary Personal/Work tabs. Accepted lists appear alongside private lists. Group, theme and font choices are stored in each user profile, independent of shared contents. The Share panel has a compact participant line with names captured at acceptance and email fallback; accepted members may read only accepted roster entries. Comments appear in expanded item details. Recipients can leave a list; owners can delete it. Updated firestore.rules must be published to enable participant roster reads and recipient names/leave operations.

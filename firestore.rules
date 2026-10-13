@@ -164,7 +164,7 @@ service cloud.firestore {
       }
     }
     match /listitInvitations/{invitationId} {
-      allow read: if signedIn() && (resource.data.ownerId == request.auth.uid || (verifiedEmail() && resource.data.email == authEmail().lower()));
+      allow read: if signedIn() && (resource.data.ownerId == request.auth.uid || (verifiedEmail() && resource.data.email == authEmail().lower()) || (resource.data.status == 'accepted' && sharedRole(resource.data.listId) in ['viewer','commenter','editor']));
       allow create: if verifiedEmail() && sharingOwner(request.resource.data.listId)
         && request.resource.data.keys().hasOnly(['listId','listName','ownerId','ownerEmail','email','role','status','expiresAt'])
         && request.resource.data.ownerId == request.auth.uid
@@ -181,8 +181,9 @@ service cloud.firestore {
         && request.resource.data.status in ['pending','accepted','revoked']
         && request.resource.data.expiresAt is int && request.resource.data.expiresAt <= request.time.toMillis() + 604800000
       ) || (
-        verifiedEmail() && resource.data.email == authEmail().lower() && resource.data.status == 'pending' && resource.data.expiresAt > request.time.toMillis()
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+        verifiedEmail() && resource.data.email == authEmail().lower() && ((resource.data.status == 'pending' && resource.data.expiresAt > request.time.toMillis()) || (resource.data.status == 'accepted' && request.resource.data.status == 'declined'))
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','recipientName'])
+        && (!('recipientName' in request.resource.data) || (request.resource.data.recipientName is string && request.resource.data.recipientName.size() <= 100))
         && request.resource.data.status in ['accepted','declined']
       );
       allow delete: if sharingOwner(resource.data.listId);

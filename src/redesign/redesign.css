@@ -4,3 +4,4 @@
 .redesign{font-family:Inter,system-ui,sans-serif}.redesign .r-item span,.redesign .r-entry input,.redesign .r-details input,.redesign .r-summary{font-family:var(--list-font,Inter,sans-serif)}.redesign .r-item span,.redesign .r-entry input{font-size:18px}.redesign .r-summary{font-size:14px}
 .r-cloud-status{max-width:620px;margin:12px auto;padding:12px;font:13px/1.5 system-ui;display:flex;gap:8px;flex-wrap:wrap;align-items:center}.r-cloud-status button{padding:6px 10px;border-radius:7px;border:1px solid #bbc3d2;background:#f2f4f8}
 .r-edit-surface{border:0;margin:0;padding:0;min-width:0}.r-edit-surface:disabled{opacity:.8}
+.redesign .r-shared-with{background:transparent;padding:4px 0 9px;color:var(--muted);font-size:12px;text-align:left;display:block}.r-invitations{max-width:620px;margin:auto}.r-comments{border-top:1px solid var(--border);padding-top:10px}.r-comments p{margin:3px 0 12px}.r-comments textarea{width:100%;min-height:65px}
