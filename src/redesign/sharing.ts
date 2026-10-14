@@ -1,0 +1,11 @@
+import {collection,doc,getDoc,onSnapshot,query,runTransaction,serverTimestamp,setDoc,updateDoc,where,writeBatch,FieldPath} from 'firebase/firestore';
+import {auth,db} from '../firebase';
+import type {List} from './model';
+export type Role='viewer'|'commenter'|'editor';
+export type Shared={id:string;ownerId:string;ownerEmail:string;list:List;revision:number};
+export type Invitation={id:string;listId:string;listName:string;ownerId:string;ownerEmail:string;email:string;role:Role;expiresAt:number;status:'pending'|'accepted'|'declined'|'revoked'};
+export const sharedRef=(id:string)=>doc(db,'listitSharedLists',id);
+export const inviteRef=(id:string,email:string)=>doc(db,'listitInvitations',id+'_'+email.toLowerCase());
+export async function publishList(list:List){const user=auth.currentUser;if(!user?.email)throw Error('Sign in first.');let exists=false;try{exists=(await getDoc(sharedRef(list.id))).exists()}catch(e){if((e as {code?:string}).code!=='permission-denied')throw e}if(!exists)await setDoc(sharedRef(list.id),{ownerId:user.uid,ownerEmail:user.email.toLowerCase(),list:JSON.parse(JSON.stringify(list)),revision:0});return list.id}
+export async function invite(list:List,email:string,role:Role){email=email.trim().toLowerCase();if(!/^[^\s/@]+@[^\s/@]+\.[^\s/@]+$/.test(email))throw Error('Enter a valid email address.');const user=auth.currentUser;if(!user?.email)throw Error('Sign in first.');if(email===user.email.toLowerCase())throw Error('You already own this list.');await publishList(list);const ref=inviteRef(list.id,email);let accepted=false;try{accepted=(await getDoc(ref)).data()?.status==='accepted'}catch(e){if((e as {code?:string}).code!=='permission-denied')throw e}await setDoc(ref,{listId:list.id,listName:list.name,ownerId:user.uid,ownerEmail:user.email.toLowerCase(),email,role,expiresAt:Date.now()+7*86400000-60000,status:accepted?'accepted':'pending'},{merge:true});return ref.id}
+export async function saveShared(record:Shared,list:List){await runTransaction(db,async tx=>{const ref=sharedRef(record.id);const snap=await tx.get(ref);if(snap.data()?.revision!==record.revision)throw Error('Shared list changed on another device. Wait for the latest update and try again.');tx.update(ref,{list:JSON.parse(JSON.stringify(list)),revision:record.revision+1})})}

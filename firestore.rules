@@ -130,6 +130,65 @@ service cloud.firestore {
       }
     }
 
+    function verifiedEmail() {
+      return signedIn() && request.auth.token.email_verified == true && authEmail() != null;
+    }
+    function sharingOwner(listId) {
+      return signedIn() && get(/databases/$(database)/documents/listitSharedLists/$(listId)).data.ownerId == request.auth.uid;
+    }
+    function invitationPath(listId) {
+      return /databases/$(database)/documents/listitInvitations/$(listId + '_' + authEmail().lower());
+    }
+    function sharedRole(listId) {
+      return verifiedEmail() && exists(invitationPath(listId)) && get(invitationPath(listId)).data.status == 'accepted'
+        ? get(invitationPath(listId)).data.role : '';
+    }
+    match /listitSharedLists/{listId} {
+      allow create: if verifiedEmail() && request.resource.data.keys().hasOnly(['ownerId','ownerEmail','list','revision'])
+        && request.resource.data.ownerId == request.auth.uid && request.resource.data.ownerEmail == authEmail().lower()
+        && request.resource.data.list.id == listId && request.resource.data.revision == 0;
+      allow read: if signedIn() && (resource.data.ownerId == request.auth.uid || sharedRole(listId) in ['viewer','commenter','editor']);
+      allow update: if (sharingOwner(listId) || sharedRole(listId) == 'editor')
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['list','revision'])
+        && request.resource.data.list.id == listId && request.resource.data.revision == resource.data.revision + 1;
+      allow delete: if sharingOwner(listId);
+      match /comments/{commentId} {
+        allow read: if sharingOwner(listId) || sharedRole(listId) in ['viewer','commenter','editor'];
+        allow create: if (sharingOwner(listId) || sharedRole(listId) in ['commenter','editor'])
+          && request.resource.data.keys().hasOnly(['itemId','text','authorId','authorEmail','createdAt'])
+          && request.resource.data.authorId == request.auth.uid && request.resource.data.authorEmail == authEmail()
+          && request.resource.data.text is string && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 2000
+          && request.resource.data.itemId is string && request.resource.data.createdAt == request.time;
+        allow update: if false;
+        allow delete: if sharingOwner(listId);
+      }
+    }
+    match /listitInvitations/{invitationId} {
+      allow read: if signedIn() && (resource.data.ownerId == request.auth.uid || (verifiedEmail() && resource.data.email == authEmail().lower()) || (resource.data.status == 'accepted' && sharedRole(resource.data.listId) in ['viewer','commenter','editor']));
+      allow create: if verifiedEmail() && sharingOwner(request.resource.data.listId)
+        && request.resource.data.keys().hasOnly(['listId','listName','ownerId','ownerEmail','email','role','status','expiresAt'])
+        && request.resource.data.ownerId == request.auth.uid
+        && request.resource.data.ownerEmail == authEmail().lower()
+        && invitationId == request.resource.data.listId + '_' + request.resource.data.email
+        && request.resource.data.expiresAt is int && request.resource.data.expiresAt > request.time.toMillis()
+        && request.resource.data.expiresAt <= request.time.toMillis() + 604800000
+        && request.resource.data.email is string
+        && request.resource.data.role in ['viewer','commenter','editor'] && request.resource.data.status == 'pending';
+      allow update: if (
+        sharingOwner(resource.data.listId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role','status','listName','expiresAt'])
+        && request.resource.data.role in ['viewer','commenter','editor']
+        && request.resource.data.status in ['pending','accepted','revoked']
+        && request.resource.data.expiresAt is int && request.resource.data.expiresAt <= request.time.toMillis() + 604800000
+      ) || (
+        verifiedEmail() && resource.data.email == authEmail().lower() && ((resource.data.status == 'pending' && resource.data.expiresAt > request.time.toMillis()) || (resource.data.status == 'accepted' && request.resource.data.status == 'declined'))
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','recipientName'])
+        && (!('recipientName' in request.resource.data) || (request.resource.data.recipientName is string && request.resource.data.recipientName.size() <= 100))
+        && request.resource.data.status in ['accepted','declined']
+      );
+      allow delete: if sharingOwner(resource.data.listId);
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }

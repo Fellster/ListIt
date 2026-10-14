@@ -1,3 +1,4 @@
+import { auth } from '../firebase';
 export interface OcrExtractedItem {
   id: string;
   title: string;
@@ -26,10 +27,13 @@ export async function scanImageWithOcr(
   customPrompt?: string
 ): Promise<OcrExtractedItem[]> {
   try {
+    if (!auth.currentUser) throw new Error('Sign in before scanning.');
+    const token = await auth.currentUser.getIdToken();
     const res = await fetch('/api/ocr-scan', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
       },
       body: JSON.stringify({
         image: imageBase64,

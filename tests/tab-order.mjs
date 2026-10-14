@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';
+import {reorderTabs,orderedLists} from '../src/redesign/model.ts';
+assert.deepEqual(reorderTabs(['a','b','c'],'a','c'),['b','c','a']);
+assert.deepEqual(reorderTabs(['a','b','c'],'c','a'),['c','a','b']);
+assert.deepEqual(reorderTabs(['a','b','c'],'a','b'),['b','a','c']);
+assert.deepEqual(reorderTabs(['a','b'],'unknown','b'),['a','b']);
+const lists=[{id:'new'},{id:'b'},{id:'a'}];
+assert.deepEqual(orderedLists(lists,['a','removed','b']).map(l=>l.id),['a','b','new']);
+assert.deepEqual(lists.map(l=>l.id),['new','b','a']);
+console.log('Tab ordering checks passed');
