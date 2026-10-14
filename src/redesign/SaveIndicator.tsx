@@ -1,0 +1,7 @@
+import {useState} from 'react';
+import {Check,LoaderCircle,TriangleAlert,Cloud} from 'lucide-react';
+export type CloudStatus={text:string;failed:boolean;retry:()=>void;backup:()=>void};
+export default function SaveIndicator({cloud,sharedMessage,busy}:{cloud:CloudStatus;sharedMessage:string;busy:boolean}){
+ const [open,setOpen]=useState(false);const sharedFailed=Boolean(sharedMessage&&!['Shared changes saved.','List removed.'].includes(sharedMessage));const failed=cloud.failed||sharedFailed;const saving=busy||cloud.text==='Saving…';const waiting=/waiting|loading|ready to save/i.test(cloud.text);const text=sharedFailed?sharedMessage:saving?'Saving…':cloud.text;const Icon=failed?TriangleAlert:saving?LoaderCircle:waiting?Cloud:Check;
+ return <div className="r-save-indicator"><button type="button" className={'r-save-button '+(failed?'r-save-warning':'')} aria-label={'Save status: '+text} aria-expanded={open} onClick={()=>setOpen(!open)}><Icon size={18} className={saving?'r-save-spinning':''}/></button><span className="r-sr-only" role="status">{text}</span>{open&&<div className="r-save-popover"><p>{text}</p>{cloud.failed&&<div className="r-actions"><button type="button" onClick={cloud.retry}>Retry save</button><button type="button" onClick={cloud.backup}>Download backup</button></div>}{sharedFailed&&!cloud.failed&&<p>Check the affected list before retrying your change.</p>}<button type="button" onClick={()=>setOpen(false)}>Close</button></div>}</div>
+}
