@@ -18,6 +18,10 @@ await assertFails(updateDoc(shared(target),{list:{id:'list1',name:'Hacked',items
 await assertFails(setDoc(doc(target,'listitSharedLists/list1/comments/c1'),{itemId:'i1',text:'comment',authorId:'target',authorEmail:'target@example.com',createdAt:serverTimestamp()}));
 await assertSucceeds(updateDoc(inv(owner),{role:'commenter'}));
 await assertSucceeds(setDoc(doc(target,'listitSharedLists/list1/comments/c1'),{itemId:'i1',text:'comment',authorId:'target',authorEmail:'target@example.com',createdAt:serverTimestamp()}));
+await assertFails(deleteDoc(doc(stranger,'listitSharedLists/list1/comments/c1')));
+await assertSucceeds(deleteDoc(doc(target,'listitSharedLists/list1/comments/c1')));
+await assertSucceeds(setDoc(doc(target,'listitSharedLists/list1/comments/c2'),{itemId:'i1',text:'another comment',authorId:'target',authorEmail:'target@example.com',createdAt:serverTimestamp()}));
+await assertSucceeds(deleteDoc(doc(owner,'listitSharedLists/list1/comments/c2')));
 await assertFails(updateDoc(shared(target),{list:{id:'list1',items:[]},revision:1}));await assertFails(updateDoc(inv(target),{role:'editor'}));
 await assertSucceeds(updateDoc(inv(owner),{role:'editor'}));await assertSucceeds(updateDoc(shared(target),{list:{id:'list1',name:'Edited',items:[]},revision:1}));
 await assertFails(updateDoc(shared(target),{ownerId:'target'}));await assertFails(deleteDoc(shared(target)));
