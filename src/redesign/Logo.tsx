@@ -1,0 +1,1 @@
+export default function Logo(){return <span className="r-logo" aria-label="ListIt"><img src="/icons/listit.svg" alt="" width="36" height="36"/><span className="r-logo-word">ListIt<span className="r-logo-dot">.</span></span></span>}
