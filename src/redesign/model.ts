@@ -1,6 +1,6 @@
 export type Item = { id: string; title: string; done: boolean; fields: Record<string,string> };
 export type List = { id: string; name: string; template: string; group: string; sharedId?: string; theme?: string; font?: string; items: Item[] };
-export type State = { version: 1; defaultTheme: string; defaultFont?: string; openingGroup?: string; listOrder?: string[]; lists: List[] };
+export type State = { version: 1; defaultTheme: string; defaultFont?: string; openingGroup?: string; itemOrders?: Record<string,string[]>; listOrder?: string[]; lists: List[] };
 export const templates = { Personal: ['Grocery','TV','Vacations','Household chores','Books','Birthdays','Payments','Other'], Work: ['To-Do','Projects','Other'] };
 export const fields: Record<string,string[]> = { Grocery:['Store','Quantity','Date','Category','Notes'], TV:['Streaming service','Season','Episode','Next season date','Notes'], Books:['Author','Status','Notes'], Birthdays:['Date','Notes'], Payments:['Date','Amount','Notes'], Vacations:['Where','Date','Notes'], 'Household chores':['Where','Date','Priority','Notes'], Projects:['Where','Date','Priority','Notes'], 'To-Do':['Where','Date','Time','Duration minutes','Priority','Notes'], Other:['Where','Date','Notes'] };
 export const fresh = (): State => ({version:1,defaultTheme:'blue',lists:[{id:crypto.randomUUID(),name:'To-Do',template:'To-Do',group:'Personal',items:[]}]});
@@ -18,3 +18,7 @@ export function calendarFile(item:Item) {
 
 export function reorderTabs(order:string[],source:string,target:string){if(source===target||!order.includes(source)||!order.includes(target))return order;const next=order.filter(id=>id!==source);next.splice(order.indexOf(target),0,source);return next;}
 export function orderedLists(lists:List[],order:string[]=[]){const ranks=new Map(order.map((id,index)=>[id,index]));return [...lists].sort((a,b)=>(ranks.get(a.id)??order.length)-(ranks.get(b.id)??order.length));}
+
+// Item order is an account preference, never part of a shared list document.
+export function orderedItems(items:Item[],order:string[]=[]){const ranks=new Map(order.map((id,index)=>[id,index]));return [...items].sort((a,b)=>(ranks.get(a.id)??order.length)-(ranks.get(b.id)??order.length));}
+export function firstList(state:State,group:string){return orderedLists(state.lists,state.listOrder).find(list=>list.group===group);}

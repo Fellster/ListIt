@@ -1,0 +1,18 @@
+import {useRef,useState,type ReactNode} from 'react';
+import {GripVertical} from 'lucide-react';
+export default function ItemShell({id,title,children,canReorder,canSwipe,done,onMove,onSwipe}:{key?:string;id:string;title:string;children:ReactNode;canReorder:boolean;canSwipe:boolean;done:boolean;onMove:(source:string,target:string)=>void;onSwipe:(action:'done'|'delete')=>void}){
+ const drag=useRef<{pointer:number;target:string}|null>(null);
+ const swipe=useRef<{pointer:number;x:number;y:number;horizontal:boolean}|null>(null);
+ const blockClick=useRef(false);const timer=useRef<ReturnType<typeof setTimeout>|null>(null);
+ const [offset,setOffset]=useState(0);const [dragging,setDragging]=useState(false);
+ function suppress(){blockClick.current=true;if(timer.current)clearTimeout(timer.current);timer.current=setTimeout(()=>{blockClick.current=false},350)}
+ function cancel(){document.querySelectorAll('.r-item-drop-target').forEach(row=>row.classList.remove('r-item-drop-target'));drag.current=null;swipe.current=null;setDragging(false);setOffset(0)}
+ return <article className={'r-gesture '+(dragging?'r-item-dragging':'')} data-item-id={id} data-reorderable={canReorder} onClickCapture={e=>{if(blockClick.current){e.preventDefault();e.stopPropagation()}}}
+ onPointerDown={e=>{if(!canSwipe||e.pointerType==='mouse'&&e.button!==0||(e.target as HTMLElement).closest('input,textarea,select,.r-drag-handle,.r-check,.r-details'))return;swipe.current={pointer:e.pointerId,x:e.clientX,y:e.clientY,horizontal:false}}}
+ onPointerMove={e=>{const s=swipe.current;if(!s||s.pointer!==e.pointerId)return;const dx=e.clientX-s.x,dy=e.clientY-s.y;if(!s.horizontal){if(Math.abs(dy)>12&&Math.abs(dy)>Math.abs(dx)){swipe.current=null;return}if(Math.abs(dx)<16||Math.abs(dx)<Math.abs(dy)*1.3)return;s.horizontal=true;e.currentTarget.setPointerCapture(e.pointerId)}setOffset(Math.max(-120,Math.min(120,dx)));}}
+ onPointerUp={e=>{const s=swipe.current;if(!s||s.pointer!==e.pointerId)return;if(s.horizontal){suppress();const distance=e.clientX-s.x;if(Math.abs(distance)>=80)onSwipe(distance>0?'done':'delete')}cancel()}} onPointerCancel={cancel}>
+ {offset!==0&&<div className={'r-swipe-hint '+(offset>0?'r-swipe-done':'r-swipe-delete')} aria-hidden="true">{offset>0?(done?'Restore':'Done'):'Delete'}</div>}
+ <div className="r-card" style={{transform:offset?`translateX(${offset}px)`:undefined}}>
+ {canReorder&&<button type="button" className="r-drag-handle" aria-label={'Reorder '+title} title="Drag to reorder, or use Alt + Up/Down" onPointerDown={e=>{e.stopPropagation();drag.current={pointer:e.pointerId,target:id};e.currentTarget.setPointerCapture(e.pointerId);setDragging(true)}} onPointerMove={e=>{if(!drag.current||drag.current.pointer!==e.pointerId)return;e.stopPropagation();const hit=document.elementFromPoint(e.clientX,e.clientY)?.closest('[data-item-id][data-reorderable="true"]');if(hit){document.querySelectorAll('.r-item-drop-target').forEach(row=>row.classList.remove('r-item-drop-target'));hit.classList.add('r-item-drop-target');drag.current.target=hit.getAttribute('data-item-id')||id;}if(e.clientY<70)window.scrollBy(0,-12);if(e.clientY>innerHeight-70)window.scrollBy(0,12)}} onPointerUp={e=>{e.stopPropagation();const d=drag.current;if(d&&d.pointer===e.pointerId){onMove(id,d.target);suppress()}cancel()}} onPointerCancel={cancel} onKeyDown={e=>{if(e.altKey&&['ArrowUp','ArrowDown'].includes(e.key)){e.preventDefault();const rows=[...document.querySelectorAll('[data-item-id][data-reorderable="true"]')];const index=rows.findIndex(row=>row.getAttribute('data-item-id')===id);const target=rows[index+(e.key==='ArrowUp'?-1:1)]?.getAttribute('data-item-id');if(target)onMove(id,target)}}}><GripVertical size={16}/></button>}
+ {children}</div></article>
+}
