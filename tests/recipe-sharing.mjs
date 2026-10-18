@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
-import {recipesToText} from '../src/redesign/recipeSharing.ts';
+import {recipesToText,hasRecipeContent} from '../src/redesign/recipeSharing.ts';
 const recipe={id:'a',title:'Pasta',done:false,fields:{Ingredients:'Pasta\nTomatoes',Instructions:'Boil.\nAdd sauce.',Notes:'Serve hot',Store:'Private store',ownerEmail:'private@example.com'}};
+assert.equal(hasRecipeContent(recipe),true);assert.equal(hasRecipeContent({...recipe,fields:{}}),false);
 const text=recipesToText([recipe]);
 assert.equal(text,'Pasta\n\nIngredients\nPasta\nTomatoes\n\nInstructions\nBoil.\nAdd sauce.\n\nNotes\nServe hot');
 assert.ok(!text.includes('Private store'));assert.ok(!text.includes('private@example.com'));
