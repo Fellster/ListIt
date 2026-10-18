@@ -1,0 +1,9 @@
+import assert from 'node:assert/strict';
+import {recipesToText} from '../src/redesign/recipeSharing.ts';
+const recipe={id:'a',title:'Pasta',done:false,fields:{Ingredients:'Pasta\nTomatoes',Instructions:'Boil.\nAdd sauce.',Notes:'Serve hot',Store:'Private store',ownerEmail:'private@example.com'}};
+const text=recipesToText([recipe]);
+assert.equal(text,'Pasta\n\nIngredients\nPasta\nTomatoes\n\nInstructions\nBoil.\nAdd sauce.\n\nNotes\nServe hot');
+assert.ok(!text.includes('Private store'));assert.ok(!text.includes('private@example.com'));
+assert.equal(recipesToText([]),'');assert.equal(recipesToText([{...recipe,title:' ',fields:{}}]),'Untitled recipe');
+assert.equal(recipesToText([recipe,{...recipe,title:'Soup',fields:{Notes:'Warm'}}]),text+'\n\n---\n\nSoup\n\nNotes\nWarm');
+console.log('PASS: single and batch recipe exports preserve lines and omit unrelated private details');
