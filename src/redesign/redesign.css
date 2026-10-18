@@ -47,3 +47,5 @@
 
 
 .r-details label>textarea{width:100%;min-height:74px;resize:vertical;font-family:var(--list-font,Inter,sans-serif)}
+
+.r-recipe-heading{display:flex;align-items:center;justify-content:space-between;margin-bottom:3px}.r-recipe-heading label{font-size:12px}.redesign .r-recipe-heading button{padding:4px 8px;font-size:12px;min-height:36px}.r-recipe-field>textarea,.r-recipe-review textarea{width:100%;min-height:74px;resize:vertical;font-family:var(--list-font,Inter,sans-serif)}.r-recipe-review{border:1px solid var(--border);border-radius:8px;padding:8px;margin-top:7px;background:var(--bg)}.r-recipe-review .r-actions{margin-top:7px}.r-recipe-field>p{font-size:12px;color:var(--ink)}
