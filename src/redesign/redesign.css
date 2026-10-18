@@ -45,3 +45,5 @@
 /* Lift the grabbed card; neighboring cards preview its landing position. */
 .r-gesture.r-item-dragging{position:relative;z-index:5;overflow:visible;opacity:1;outline:none;will-change:transform}.r-item-dragging>.r-card{box-shadow:0 8px 22px #0003;outline:2px solid var(--accent);transform:scale(1.015);cursor:grabbing}.r-item-dragging .r-drag-handle{cursor:grabbing}.r-item-drop-target{outline:none}
 
+
+.r-details label>textarea{width:100%;min-height:74px;resize:vertical;font-family:var(--list-font,Inter,sans-serif)}
