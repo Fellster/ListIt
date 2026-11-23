@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+import {rememberStores,storesFromLists,sortByStore} from '../src/redesign/stores.ts';
+assert.deepEqual(rememberStores(['Target',' Costco '],['target','COSTCO','Trader Joe’s','']),['Costco','Target','Trader Joe’s']);
+assert.deepEqual(rememberStores(['Target'],[]),['Target'],'Saved stores remain after items are removed');
+const item=(id,Store)=>({id,title:id,done:false,fields:{Store}});
+const items=[item('first target','Target'),item('missing',' '),item('costco','Costco'),item('second target','target')];
+assert.deepEqual(sortByStore(items).map(i=>i.id),['costco','first target','second target','missing']);
+assert.deepEqual(items.map(i=>i.id),['first target','missing','costco','second target'],'Sorting must not rearrange shared content');
+assert.deepEqual(storesFromLists([{template:'Grocery',items},{template:'TV',items:[item('tv','Not a store')]}]),['Target',' ','Costco','target']);
+assert.deepEqual(rememberStores(JSON.parse(JSON.stringify(['Target','Costco']))),['Costco','Target']);
+console.log('PASS: saved store history, case/space duplicates, grocery-only discovery, missing stores last, stable personal sort');
