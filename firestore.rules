@@ -160,6 +160,7 @@ service cloud.firestore {
         && validSharedMetadata(data.list, listId)
         && data.itemIds is list && data.itemIds.size() <= 300
         && data.itemIds.toSet().size() == data.itemIds.size()
+        && (data.itemIds.size() == 0 || data.itemIds.join(',').split(',') == data.itemIds)
         && data.itemIds.join(',').matches('^([A-Za-z0-9_-]{1,128}(,[A-Za-z0-9_-]{1,128})*)?$');
     }
     function validSharedFields(data) {
