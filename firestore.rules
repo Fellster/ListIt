@@ -17,7 +17,7 @@ service cloud.firestore {
     }
 
     function normalizedAuthEmail() {
-      return authEmail().lower().trim().replace('.', '_');
+      return authEmail().lower().trim().replace('[.]', '_');
     }
 
     function isOwner(listData) {
@@ -29,7 +29,7 @@ service cloud.firestore {
         listData.ownerId == request.auth.uid ||
         request.auth.uid in listData.get('members', []) ||
         (
-          authEmail() != null &&
+          verifiedEmail() &&
           authEmail().lower().trim() in listData.get('memberEmails', [])
         )
       );
@@ -39,7 +39,7 @@ service cloud.firestore {
       return signedIn() && (
         listData.ownerId == request.auth.uid ||
         (
-          authEmail() != null &&
+          verifiedEmail() &&
           listData.get(
             ['sharedWith', normalizedAuthEmail(), 'role'],
             ''
@@ -97,7 +97,7 @@ service cloud.firestore {
         )
         && request.resource.data.listId == listId;
 
-        allow update, delete: if isEditor(
+        allow delete: if isEditor(
           get(/databases/$(database)/documents/lists/$(listId)).data
         );
 
@@ -143,15 +143,83 @@ service cloud.firestore {
       return verifiedEmail() && exists(invitationPath(listId)) && get(invitationPath(listId)).data.status == 'accepted'
         ? get(invitationPath(listId)).data.role : '';
     }
+    function validText(value, max) { return value is string && value.size() <= max; }
+    function validId(value) { return value is string && value.matches('^[A-Za-z0-9_-]{1,128}$'); }
+    function validSharedMetadata(data, listId) {
+      return data is map && data.keys().hasAll(['id','name','template','group'])
+        && data.keys().hasOnly(['id','name','template','group','theme','font','sharedId'])
+        && data.id == listId && validId(listId)
+        && validText(data.name, 120) && data.name.trim().size() > 0
+        && data.template in ['To-Do','Projects','Other','Grocery','TV','Vacations','Household chores','Books','Recipes','Workouts','Birthdays','Payments']
+        && data.group in ['Personal','Work'] && validText(data.get('theme',''),64) && validText(data.get('font',''),80)
+        && data.get('sharedId',listId) == listId;
+    }
+    function validSharedDocument(data, listId) {
+      return data.keys().hasOnly(['ownerId','ownerEmail','list','revision','schemaVersion','itemIds'])
+        && data.schemaVersion == 2 && data.revision is int && data.revision >= 0
+        && validSharedMetadata(data.list, listId)
+        && data.itemIds is list && data.itemIds.size() <= 300
+        && data.itemIds.toSet().size() == data.itemIds.size()
+        && data.itemIds.join(',').matches('^([A-Za-z0-9_-]{1,128}(,[A-Za-z0-9_-]{1,128})*)?$');
+    }
+    function validSharedFields(data) {
+      return data is map && data.keys().hasOnly(['Sets','Reps','Weight','Distance','Duration minutes','Date','Notes','Ingredients','Instructions','Store','Quantity','Category','Streaming service','Season','Episode','Next season date','Author','Status','Amount','Where','Priority','Time','Prep time','Cook time','Servings','Source link','Exercise'])
+        && validText(data.get('Sets',''),256)
+        && validText(data.get('Reps',''),256)
+        && validText(data.get('Weight',''),256)
+        && validText(data.get('Distance',''),256)
+        && validText(data.get('Duration minutes',''),256)
+        && validText(data.get('Date',''),256)
+        && validText(data.get('Notes',''),20000)
+        && validText(data.get('Ingredients',''),30000)
+        && validText(data.get('Instructions',''),30000)
+        && validText(data.get('Store',''),256)
+        && validText(data.get('Quantity',''),256)
+        && validText(data.get('Category',''),256)
+        && validText(data.get('Streaming service',''),256)
+        && validText(data.get('Season',''),256)
+        && validText(data.get('Episode',''),256)
+        && validText(data.get('Next season date',''),256)
+        && validText(data.get('Author',''),256)
+        && validText(data.get('Status',''),256)
+        && validText(data.get('Amount',''),256)
+        && validText(data.get('Where',''),256)
+        && validText(data.get('Priority',''),256)
+        && validText(data.get('Time',''),256)
+        && validText(data.get('Prep time',''),256)
+        && validText(data.get('Cook time',''),256)
+        && validText(data.get('Servings',''),256)
+        && validText(data.get('Source link',''),2048)
+        && validText(data.get('Exercise',''),256)
+        ;
+    }
+    function validSharedItem(data, itemId) {
+      return data.keys().hasAll(['id','title','done','fields']) && data.keys().hasOnly(['id','title','done','fields'])
+        && data.id == itemId && validId(itemId) && validText(data.title,2000) && data.title.trim().size() > 0
+        && data.done is bool && validSharedFields(data.fields);
+    }
+    function canWriteSharedItems(listId) {
+      return verifiedEmail() && (getAfter(/databases/$(database)/documents/listitSharedLists/$(listId)).data.ownerId == request.auth.uid || sharedRole(listId) == 'editor')
+        && (exists(/databases/$(database)/documents/listitSharedLists/$(listId))
+          ? getAfter(/databases/$(database)/documents/listitSharedLists/$(listId)).data.revision == get(/databases/$(database)/documents/listitSharedLists/$(listId)).data.revision + 1
+          : getAfter(/databases/$(database)/documents/listitSharedLists/$(listId)).data.revision == 0);
+    }
     match /listitSharedLists/{listId} {
-      allow create: if verifiedEmail() && request.resource.data.keys().hasOnly(['ownerId','ownerEmail','list','revision'])
+      allow create: if verifiedEmail() && validSharedDocument(request.resource.data,listId)
         && request.resource.data.ownerId == request.auth.uid && request.resource.data.ownerEmail == authEmail().lower()
-        && request.resource.data.list.id == listId && request.resource.data.revision == 0;
+        && request.resource.data.revision == 0;
       allow read: if signedIn() && (resource.data.ownerId == request.auth.uid || sharedRole(listId) in ['viewer','commenter','editor']);
-      allow update: if (sharingOwner(listId) || sharedRole(listId) == 'editor')
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['list','revision'])
-        && request.resource.data.list.id == listId && request.resource.data.revision == resource.data.revision + 1;
+      allow update: if verifiedEmail() && (sharingOwner(listId) || sharedRole(listId) == 'editor')
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['list','revision','schemaVersion','itemIds'])
+        && validSharedDocument(request.resource.data,listId) && request.resource.data.revision == resource.data.revision + 1;
       allow delete: if sharingOwner(listId);
+      match /items/{itemId} {
+        allow read: if sharingOwner(listId) || sharedRole(listId) in ['viewer','commenter','editor'];
+        allow create, update: if canWriteSharedItems(listId) && validSharedItem(request.resource.data,itemId)
+          && itemId in getAfter(/databases/$(database)/documents/listitSharedLists/$(listId)).data.itemIds;
+        allow delete: if canWriteSharedItems(listId)
+          && !(itemId in getAfter(/databases/$(database)/documents/listitSharedLists/$(listId)).data.itemIds);
+      }
       match /comments/{commentId} {
         allow read: if sharingOwner(listId) || sharedRole(listId) in ['viewer','commenter','editor'];
         allow create: if (sharingOwner(listId) || sharedRole(listId) in ['commenter','editor'])
@@ -175,13 +243,15 @@ service cloud.firestore {
         && invitationId == request.resource.data.listId + '_' + request.resource.data.email
         && request.resource.data.expiresAt is int && request.resource.data.expiresAt > request.time.toMillis()
         && request.resource.data.expiresAt <= request.time.toMillis() + 604800000
-        && request.resource.data.email is string
+        && validText(request.resource.data.email,254) && request.resource.data.email == request.resource.data.email.lower().trim()
+        && request.resource.data.email.matches('^[^ @/]+@[^ @/]+[.][^ @/]+$')
+        && validText(request.resource.data.listName,120) && request.resource.data.listName.size() > 0
         && request.resource.data.role in ['viewer','commenter','editor'] && request.resource.data.status == 'pending';
       allow update: if (
-        sharingOwner(resource.data.listId)
+        verifiedEmail() && sharingOwner(resource.data.listId)
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role','status','listName','expiresAt'])
-        && request.resource.data.role in ['viewer','commenter','editor']
-        && request.resource.data.status in ['pending','accepted','revoked']
+        && request.resource.data.role in ['viewer','commenter','editor'] && validText(request.resource.data.listName,120) && request.resource.data.listName.size() > 0
+        && (request.resource.data.status in ['pending','revoked'] || (resource.data.status == 'accepted' && request.resource.data.status == 'accepted'))
         && request.resource.data.expiresAt is int && request.resource.data.expiresAt <= request.time.toMillis() + 604800000
       ) || (
         verifiedEmail() && resource.data.email == authEmail().lower() && ((resource.data.status == 'pending' && resource.data.expiresAt > request.time.toMillis()) || (resource.data.status == 'accepted' && request.resource.data.status == 'declined'))
@@ -190,6 +260,24 @@ service cloud.firestore {
         && request.resource.data.status in ['accepted','declined']
       );
       allow delete: if sharingOwner(resource.data.listId);
+    }
+
+    match /listitOcrUsage/{userId}/windows/{windowId} {
+      function ownVerifiedUsage() { return verifiedEmail() && request.auth.uid == userId; }
+      function validWindow(data) {
+        return data.keys().hasOnly(['kind','window','count','updatedAt'])
+          && data.kind in ['minute','day'] && data.window is int && data.count is int
+          && data.count > 0 && data.count <= (data.kind == 'minute' ? 5 : 50)
+          && windowId == data.kind + '_' + string(data.window)
+          && data.window == int(request.time.toMillis() / (data.kind == 'minute' ? 60000 : 86400000))
+          && data.updatedAt == request.time;
+      }
+      allow get: if ownVerifiedUsage();
+      allow create: if ownVerifiedUsage() && validWindow(request.resource.data) && request.resource.data.count == 1;
+      allow update: if ownVerifiedUsage() && validWindow(request.resource.data)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['count','updatedAt'])
+        && request.resource.data.count == resource.data.count + 1;
+      allow list, delete: if false;
     }
 
     match /{document=**} {

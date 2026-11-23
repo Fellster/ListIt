@@ -1,7 +1,6 @@
 import express from 'express';
 import path from 'path';
 import dotenv from 'dotenv';
-import { createServer as createViteServer } from 'vite';
 import ocrHandler from './api/ocr-scan';
 
 dotenv.config();
@@ -42,6 +41,7 @@ async function startServer() {
 
   // Setup Vite development middleware or static production serving
   if (process.env.NODE_ENV !== 'production') {
+    const {createServer:createViteServer}=await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',

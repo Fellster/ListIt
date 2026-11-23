@@ -1,7 +1,7 @@
 import {useEffect,useState,useMemo} from 'react';
 import {collection,doc,getDoc,onSnapshot,query,where,updateDoc,addDoc,serverTimestamp,deleteDoc} from 'firebase/firestore';
 import {auth,db} from '../firebase';
-import {sharedRef,saveShared,type Shared,type Invitation,type Role} from './sharing';
+import {sharedRef,saveShared,subscribeShared,type Shared,type Invitation,type Role} from './sharing';
 import Redesign from './Redesign';
 import type {State} from './model';
 export default function SharedHub(){const user=auth.currentUser!;const [owned,setOwned]=useState<Shared[]>([]);const [invitations,setInvitations]=useState<Invitation[]>([]);const [selected,setSelected]=useState('');const [message,setMessage]=useState('');
@@ -10,7 +10,7 @@ async function accept(i:Invitation){try{if(i.expiresAt<=Date.now())throw Error('
 const accepted=invitations.filter(i=>i.status==='accepted');const role=owned.some(l=>l.id===selected)?'owner':accepted.find(i=>i.listId===selected)?.role;const accessible=Boolean(role);
 return <section className="redesign"><h2>Shared lists</h2>{invitations.filter(i=>i.status==='pending').map(i=><div className="r-panel" key={i.id}><span>{i.listName} · {i.ownerEmail} · {i.role}</span><button onClick={()=>void accept(i)}>Accept</button><button onClick={()=>void updateDoc(doc(db,'listitInvitations',i.id),{status:'declined'}).catch(e=>setMessage(e.message))}>Decline</button></div>)}<nav>{owned.map(l=><button key={l.id} onClick={()=>setSelected(l.id)}>{l.list.name} · Owner</button>)}{accepted.map(i=><button key={i.id} onClick={()=>setSelected(i.listId)}>{i.listName} · {i.role}</button>)}</nav>{selected&&accessible&&<SharedEditor key={selected+'_'+role} id={selected} role={role!}/>}<p role="status">{message}</p></section>}
 function SharedEditor({id,role}:{id:string;role:Role|'owner';key?:string}){const [record,setRecord]=useState<Shared|null>(null);const [message,setMessage]=useState('');const [comments,setComments]=useState<any[]>([]);const [item,setItem]=useState('');const [text,setText]=useState('');const [busy,setBusy]=useState(false);
-useEffect(()=>{const a=onSnapshot(sharedRef(id),s=>{if(s.exists()){setRecord({id,...s.data()} as Shared);setMessage('Shared list synced.')}else{setRecord(null);setMessage('This list was deleted.')}},e=>{setRecord(null);setMessage('Access unavailable: '+e.message)});const b=onSnapshot(collection(db,'listitSharedLists',id,'comments'),s=>setComments(s.docs.map(d=>({id:d.id,...d.data()}))),()=>setComments([]));return()=>{a();b();setRecord(null)}},[id]);
+useEffect(()=>{const a=subscribeShared(id,value=>{setRecord(value);setMessage(value?'Shared list synced.':'This list was deleted.')},error=>{setRecord(null);setMessage('Access unavailable: '+error.message)});const b=onSnapshot(collection(db,'listitSharedLists',id,'comments'),s=>setComments(s.docs.map(d=>({id:d.id,...d.data()}))),()=>setComments([]));return()=>{a();b();setRecord(null)}},[id]);
 const initial=useMemo<State|null>(()=>record?{version:1,defaultTheme:'blue',lists:[record.list]}:null,[record]);
 if(!record||!initial)return <p role="status">{message||'Loading shared list…'}</p>;
 
