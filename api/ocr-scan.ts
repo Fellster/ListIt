@@ -1,4 +1,4 @@
-import {createOcrQuota,type QuotaResult} from '../server/ocrQuota';
+import {createOcrQuota,type QuotaResult} from '../server/ocrQuota.js';
 import {GoogleGenAI,Type} from '@google/genai';
 import {createRemoteJWKSet,jwtVerify} from 'jose';
 const projectId='gen-lang-client-0532438240';
