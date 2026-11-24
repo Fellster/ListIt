@@ -1,5 +1,5 @@
 {
-  "name": "react-example",
+  "name": "listit",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -9,13 +9,14 @@
     "start": "node dist/server.cjs",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "test": "node scripts/test-unit.mjs",
+    "test:rules": "firebase emulators:exec --config firebase.sharing-test.json --project demo-listit --only firestore \"node --import tsx tests/sharing-rules.mjs && node --import tsx tests/ocr-quota-integration.mjs\"",
+    "check": "npm run lint && npm test && npm run test:rules && npm run build",
+    "test:ui": "node tests/item-interactions.cjs && node tests/store-interactions.cjs && node tests/list-extras.cjs"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
-    "@tailwindcss/vite": "^4.1.14",
-    "@types/canvas-confetti": "^1.9.0",
-    "@vitejs/plugin-react": "^5.0.4",
     "canvas-confetti": "^1.9.4",
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
@@ -24,17 +25,25 @@
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
     "react": "^19.0.1",
-    "react-dom": "^19.0.1",
-    "vite": "^6.2.3"
+    "react-dom": "^19.0.1"
   },
   "devDependencies": {
+    "@firebase/rules-unit-testing": "5.0.0",
+    "@tailwindcss/vite": "^4.1.14",
+    "@types/canvas-confetti": "^1.9.0",
     "@types/express": "^4.17.21",
     "@types/node": "^22.14.0",
+    "@vitejs/plugin-react": "^5.0.4",
     "autoprefixer": "^10.4.21",
     "esbuild": "^0.25.0",
+    "firebase-tools": "15.37.0",
+    "playwright": "1.62.1",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",
     "vite": "^6.2.3"
+  },
+  "engines": {
+    "node": ">=22 <25"
   }
 }

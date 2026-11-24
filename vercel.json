@@ -1,6 +1,8 @@
 {
-  "installCommand": "npm install",
+  "installCommand": "npm ci",
   "functions": {
-    "api/ocr-scan.ts": { "maxDuration": 60 }
+    "api/ocr-scan.ts": {
+      "maxDuration": 60
+    }
   }
 }
