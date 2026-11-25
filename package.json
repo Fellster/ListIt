@@ -13,7 +13,7 @@
     "test": "node scripts/test-unit.mjs",
     "test:rules": "firebase emulators:exec --config firebase.sharing-test.json --project demo-listit --only firestore \"node --import tsx tests/sharing-rules.mjs && node --import tsx tests/ocr-quota-integration.mjs\"",
     "check": "npm run lint && npm test && npm run test:rules && npm run build",
-    "test:ui": "node tests/item-interactions.cjs && node tests/store-interactions.cjs && node tests/list-extras.cjs"
+    "test:ui": "node tests/item-interactions.cjs && node tests/store-interactions.cjs && node tests/list-extras.cjs && node tests/tv-interactions.cjs"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
