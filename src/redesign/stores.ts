@@ -4,6 +4,9 @@ export function rememberStores(...groups:string[][]){const seen=new Map<string,s
 export function storesFromLists(lists:List[]){return lists.filter(list=>list.template==='Grocery').flatMap(list=>list.items.map(item=>item.fields.Store||''))}
 export function sortByStore(items:Item[]){return [...items].sort((a,b)=>{const first=key(a.fields.Store||''),second=key(b.fields.Store||'');if(!first)return second?1:0;if(!second)return -1;return first.localeCompare(second,undefined,{sensitivity:'base',numeric:true})})}
 
-export function servicesFromLists(lists:List[]){return lists.filter(list=>list.template==='TV').flatMap(list=>list.items.map(item=>item.fields['Streaming service']||''))}
+export function serviceName(value:string){const name=value.trim();return /^apple(?:\s*tv)?\s*\+?$/i.test(name)?'Apple+':name}
+export function rememberServices(...groups:string[][]){return rememberStores(...groups.map(group=>group.map(serviceName)))}
+export function servicesFromLists(lists:List[]){return lists.filter(list=>list.template==='TV').flatMap(list=>list.items.map(item=>serviceName(item.fields['Streaming service']||'')))}
+export function sortByService(items:Item[]){return [...items].sort((a,b)=>{const first=key(serviceName(a.fields['Streaming service']||'')),second=key(serviceName(b.fields['Streaming service']||''));if(!first)return second?1:0;if(!second)return -1;return first.localeCompare(second,undefined,{sensitivity:'base',numeric:true})})}
 export function sameService(first:string,second:string){return key(first)===key(second)}
-export function summaryFields(item:Item,template:string){const entries=Object.entries(item.fields);return template==='TV'?[...entries.filter(([name])=>name==='Streaming service'),...entries.filter(([name])=>name!=='Streaming service')]:entries}
+export function summaryFields(item:Item,template:string){const entries=Object.entries(item.fields);return template==='TV'?[...entries.filter(([name])=>name==='Streaming service').map(([name,value])=>[name,serviceName(value)] as [string,string]),...entries.filter(([name])=>name!=='Streaming service')]:entries}
